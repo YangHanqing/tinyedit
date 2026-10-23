@@ -46,8 +46,22 @@ final class DefaultAppTests: XCTestCase {
         for format in model.formats {
             let url = try model.exampleFile(for: format)
             XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), format.id)
+            XCTAssertEqual(try Data(contentsOf: url), Data(format.sample.utf8), format.id)
             XCTAssertEqual(UTType(filenameExtension: url.pathExtension), format.type, format.id)
             XCTAssertEqual(try model.exampleFile(for: format), url)
         }
+    }
+
+    /// Earlier versions wrote empty examples, which macOS can report as damaged; they are refilled.
+    @MainActor
+    func testExampleFileReplacesAnEmptyOne() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let model = DefaultAppModel(examples: folder)
+        let format = try XCTUnwrap(model.formats.first)
+        let url = try model.exampleFile(for: format)
+        try Data().write(to: url)
+        _ = try model.exampleFile(for: format)
+        XCTAssertFalse(try Data(contentsOf: url).isEmpty)
     }
 }

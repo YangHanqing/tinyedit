@@ -2,24 +2,31 @@ import SwiftUI
 
 /// The standard macOS settings window: toolbar tabs, one grouped form per pane.
 struct SettingsView: View {
+    private enum Pane: Hashable { case general, editor, defaultApp, translation, shortcuts }
+
+    /// Bound so the window always opens on General instead of the pane it was closed on.
+    @State private var pane = Pane.general
+
     var body: some View {
-        TabView {
-            Tab("General", systemImage: "gearshape") {
+        TabView(selection: $pane) {
+            Tab("General", systemImage: "gearshape", value: .general) {
                 GeneralSettingsPane().settingsPane(height: 560)
             }
-            Tab("Editor", systemImage: "character.cursor.ibeam") {
+            Tab("Editor", systemImage: "character.cursor.ibeam", value: .editor) {
                 EditorSettingsPane().settingsPane(height: 560)
             }
-            Tab("Default App", systemImage: "doc.text") {
+            Tab("Default App", systemImage: "doc.text", value: .defaultApp) {
                 DefaultAppSettingsPane().settingsPane(height: 600)
             }
-            Tab("Translation", systemImage: "character.bubble") {
+            Tab("Translation", systemImage: "character.bubble", value: .translation) {
                 TranslationSettingsView().settingsPane(height: 600)
             }
-            Tab("Shortcuts", systemImage: "keyboard") {
+            Tab("Shortcuts", systemImage: "keyboard", value: .shortcuts) {
                 ShortcutsSettingsPane().settingsPane(height: 600)
             }
         }
+        .onAppear { pane = .general }
+        .onDisappear { pane = .general }
     }
 }
 
