@@ -59,8 +59,9 @@ struct PasteSuggestion: Equatable, Sendable {
 }
 
 /// Local checks for pasted text. Nothing is uploaded. Language and Format JSON are offered only for a
-/// paste that left the tab holding only the pasted text; decodes for any one-line paste. Each reading runs the same transform as its Tools menu entry, after a cheap shape check, and is
-/// offered only when that transform succeeds with a useful result. A line may match more than one reading.
+/// paste that left the tab holding only the pasted text; decodes for any one-line paste. Each reading runs
+/// the same transform as its Tools menu entry, after a cheap shape check, and is offered only when that
+/// transform succeeds with a useful result. A line may match more than one reading.
 enum PasteDecodeDetector {
     static let maxBytes = 1_048_576
     private static let minimumBase64Length = 8

@@ -2,9 +2,9 @@ import XCTest
 import AppKit
 @testable import TinyEdit
 
-/// PR 1 spike: one NSTextView, two content storages, swapped via NSTextLayoutManager.replace(_:).
+/// One NSTextView, one content storage per buffer, swapped with `NSTextLayoutManager.replace(_:)`.
 @MainActor
-final class EditorHostSpikeTests: XCTestCase {
+final class BufferSwapTests: XCTestCase {
     func testSwapKeepsTextSelectionAndUndoPerBuffer() {
         let settings = EditorSettings()
         let host = EditorTextHost()

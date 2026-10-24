@@ -34,7 +34,7 @@ final class LineNumberRuler: NSRulerView {
     }
 
     /// Confines everything the ruler paints (including AppKit's own edge line) to the rows next to the text.
-    /// Without this a stray vertical line showed up above the editor, over the tab row.
+    /// Without this a stray vertical line shows up above the editor, over the tab row.
     override func draw(_ dirtyRect: NSRect) {
         guard let clip = scrollView?.contentView else { super.draw(dirtyRect); return }
         let allowed = convert(clip.bounds, from: clip).intersection(bounds)

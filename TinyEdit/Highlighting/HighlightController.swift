@@ -36,7 +36,7 @@ final class HighlightController {
         if !v { notedLargeFile = false }
     }
 
-    /// Clearing a document that has no colors still walked all of it, on every settings change of a plain-text tab.
+    /// Skips a document that has no colors: clearing it would walk all of it on every settings change of a plain-text tab.
     private func clear(_ store: BufferTextStore) {
         defer { applied = nil }
         guard let host, let applied, applied.swap == host.contentSwaps, !applied.spans.isEmpty else { return }

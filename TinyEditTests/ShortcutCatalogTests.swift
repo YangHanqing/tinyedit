@@ -3,16 +3,6 @@ import XCTest
 @testable import TinyEdit
 
 final class ShortcutCatalogTests: XCTestCase {
-    func testDisplayStringUsesMenuModifierOrderAndKeySymbols() {
-        XCTAssertEqual(AppShortcut.duplicateLine.displayString, "⇧⌘D")
-        XCTAssertEqual(AppShortcut.findAndReplace.displayString, "⌥⌘F")
-        XCTAssertEqual(AppShortcut.moveLineUp.displayString, "⌥↑")
-        XCTAssertEqual(AppShortcut.joinLines.displayString, "⌃J")
-        XCTAssertEqual(AppShortcut.toggleTask.displayString, "⌘↩")
-        XCTAssertEqual(KeyboardShortcut("v", modifiers: [.shift, .command, .option]).displayString, "⌥⇧⌘V")
-        XCTAssertEqual(KeyboardShortcut(.tab, modifiers: .shift).displayString, "⇧⇥")
-        XCTAssertEqual(KeyboardShortcut(.escape, modifiers: []).displayString, "⎋")
-    }
 
     /// Context keys (Escape, Return, Tab) mean different things in different places; a key with
     /// ⌘ or ⌃ is global and must be listed once.

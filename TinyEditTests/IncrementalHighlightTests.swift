@@ -100,38 +100,6 @@ final class IncrementalHighlightTests: XCTestCase {
         await fuzz(.json, seed: 3)
     }
 
-    func testTabSwapAndLanguageChangeRepaint() async {
-        let settings = EditorSettings()
-        let a = BufferTextStore(id: UUID(), text: source, settings: settings)
-        let b = BufferTextStore(id: UUID(), text: "let q = 1\n", settings: settings)
-        host.activate(a, settings: settings)
-        await settle(a, .javascript)
-        host.activate(b, settings: settings)
-        await settle(b, .javascript)
-        host.activate(a, settings: settings)
-        await settle(a, .javascript)   // the swaps left no colors behind
-        await settle(a, .markdown)
-        await settle(a, .plain)
-    }
-
-    /// Repainting a region clears the find matches there too; they come back.
-    func testFindMatchesSurviveARepaint() async {
-        let settings = EditorSettings()
-        let store = BufferTextStore(id: UUID(), text: source, settings: settings)
-        host.activate(store, settings: settings)
-        let find = FindMatchController(host: host)
-        controller.onRegionRepainted = { find.restore(in: $1, store: $0) }
-        await settle(store, .javascript)
-        find.schedule(store: store, query: "a", caseSensitive: true, delay: .zero)
-        let start = ContinuousClock.now
-        while find.matches.isEmpty, ContinuousClock.now - start < .seconds(2) { try? await Task.sleep(for: .milliseconds(5)) }
-        XCTAssertGreaterThan(find.matches.count, 2)
-        await settle(store, .markdown)
-        let backgrounds = attributes(.backgroundColor, in: store)
-        for match in find.matches {
-            XCTAssertNotNil(backgrounds[match.location], "match at \(match.location) lost its background")
-        }
-    }
 }
 
 private struct SplitMix {

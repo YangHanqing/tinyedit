@@ -45,8 +45,8 @@ struct RootView: View {
     }
 
     /// One `EditorView` whether or not the preview shows. Two (one per `if` branch) share the host's one
-    /// scroll view, and SwiftUI updates the outgoing one last with its old store: leaving a tab with the
-    /// preview open put the previous buffer back in the text view, and typing went into it.
+    /// scroll view, and SwiftUI would update the outgoing one last with its old store: leaving a tab with the
+    /// preview open would put the previous buffer back in the text view, and typing would go into it.
     private var editorSlot: some View {
         HSplitView {
             EditorView(host: appState.host,

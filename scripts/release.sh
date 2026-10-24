@@ -4,7 +4,7 @@
 #   NOTES.md: this version's changes, Chinese first, then English. The install section
 #   and the DMG's SHA-256 are appended here, so the notes file carries only the changes.
 #   --dry-run: everything except publishing; prints where the DMG and final notes are.
-#   --draft:   publishes a draft release, visible only to the owner until published.
+#   --draft:   publishes a draft release, visible only to maintainers until published.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 fail() { echo "$*" >&2; exit 1; }

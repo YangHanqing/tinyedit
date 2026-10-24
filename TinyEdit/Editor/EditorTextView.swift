@@ -115,7 +115,7 @@ final class EditorTextView: NSTextView {
     }
 
     /// Edit ▸ Undo / Redo send these up the responder chain, and in the SwiftUI window nothing above the
-    /// text view answers them, so ⌘Z and ⇧⌘Z did nothing. The text view runs its own (buffer's) manager.
+    /// text view answers them, so without these ⌘Z and ⇧⌘Z would do nothing. The text view runs its own (buffer's) manager.
     @objc func undo(_ sender: Any?) {
         guard let manager = undoManager, manager.canUndo else { return NSSound.beep() }
         manager.undo()
