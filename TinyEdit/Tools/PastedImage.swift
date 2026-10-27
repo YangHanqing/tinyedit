@@ -36,6 +36,12 @@ enum PastedImage {
         return .image(data)
     }
 
+    /// Inspect advertised types only: menu validation must not load or recognize image bytes.
+    static func canPaste(_ pasteboard: NSPasteboard, recognizeImages: Bool) -> Bool {
+        if pasteboard.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) { return true }
+        return recognizeImages && pasteboard.availableType(from: imageTypes) != nil
+    }
+
     /// A picture ImageIO can read. SVG is text and opens as a tab.
     static func isImageFile(_ url: URL) -> Bool {
         guard !url.hasDirectoryPath else { return false }

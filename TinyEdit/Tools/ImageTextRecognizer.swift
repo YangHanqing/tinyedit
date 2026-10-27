@@ -4,7 +4,7 @@ import ImageIO
 import Vision
 
 /// Reads the text in pictures with Vision, on this Mac. Nothing is uploaded. macOS 26 uses the document
-/// reader, which also finds tables; macOS 15 the line recognizer. Both feed `ImageTextLayout`.
+/// reader when opted in; otherwise all versions use the line recognizer. Both feed `ImageTextLayout`.
 enum ImageTextRecognizer {
     enum Failure: Error { case unreadableImage }
 
@@ -13,11 +13,11 @@ enum ImageTextRecognizer {
 
     /// Each picture in order, separated by a blank line. `languageCorrection` is off for code, where it
     /// "fixes" identifiers into words.
-    static func recognize(_ images: [Data], languageCorrection: Bool, indent: IndentStyle, tabWidth: Int) async throws -> String {
+    static func recognize(_ images: [Data], languageCorrection: Bool, indent: IndentStyle, tabWidth: Int, recognizeDocumentTables: Bool = false) async throws -> String {
         var texts: [String] = []
         for data in images {
             try Task.checkCancellation()
-            let page = try await read(data, languageCorrection: languageCorrection)
+            let page = try await read(data, languageCorrection: languageCorrection, recognizeDocumentTables: recognizeDocumentTables)
             let text = ImageTextLayout.text(lines: page.lines, tables: page.tables, indent: indent, tabWidth: tabWidth)
             if !text.isEmpty { texts.append(text) }
         }
@@ -25,11 +25,11 @@ enum ImageTextRecognizer {
         return texts.joined(separator: "\n\n")
     }
 
-    private static func read(_ data: Data, languageCorrection: Bool) async throws
+    private static func read(_ data: Data, languageCorrection: Bool, recognizeDocumentTables: Bool) async throws
         -> (lines: [ImageTextLayout.Line], tables: [ImageTextLayout.Table]) {
         guard let image = decode(data) else { throw Failure.unreadableImage }
         let size = CGSize(width: image.width, height: image.height)
-        if #available(macOS 26, *) {
+        if #available(macOS 26, *), recognizeDocumentTables {
             var request = RecognizeDocumentsRequest()
             request.textRecognitionOptions.useLanguageCorrection = languageCorrection
             request.textRecognitionOptions.automaticallyDetectLanguage = true

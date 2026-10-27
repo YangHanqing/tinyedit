@@ -139,6 +139,10 @@ final class AppState {
         host.textView.onPasteBegin = { [weak self] in self?.beginPasteRecognition() }
         host.textView.onPasteEnd = { [weak self] in self?.endPasteRecognition() }
         host.textView.onPasteboard = { [weak self] in self?.handlePasteboard($0) ?? false }
+        host.textView.canPasteboard = { [weak self] in
+            guard let self, self.activeStore != nil else { return false }
+            return PastedImage.canPaste($0, recognizeImages: self.settings.recognizeTextInImages)
+        }
         host.textView.inlineCalculationContext = { [weak self] in
             guard let self else { return nil }
             return InlineCalculator.Context(mode: self.settings.inlineCalculation,
@@ -439,7 +443,27 @@ final class AppState {
         guard s != settings else { return }
         let appearanceChanged = s.appearance != settings.appearance
         let iconChanged = s.appIcon != settings.appIcon
+        let languageSuggestionsChanged = s.suggestLanguageWhileTyping != settings.suggestLanguageWhileTyping
+        let pasteSuggestionsChanged = s.suggestPasteDecodes != settings.suggestPasteDecodes
+            || s.suggestPasteLanguage != settings.suggestPasteLanguage
+            || s.suggestPasteCleanup != settings.suggestPasteCleanup
+            || s.recognizeCurlCommands != settings.recognizeCurlCommands
         settings = s
+        if languageSuggestionsChanged {
+            for task in languageDetectionTasks.values { task.cancel() }
+            languageDetectionTasks.removeAll()
+            for id in session.tabOrder { session.buffers[id]?.languageSuggestion = nil }
+            if s.suggestLanguageWhileTyping, let id = session.selectedBufferID { scheduleLanguageDetection(id) }
+            scheduleFlush()
+        }
+        if pasteSuggestionsChanged {
+            for task in pasteTasks.values { task.cancel() }
+            pasteTasks.removeAll()
+            for id in session.tabOrder {
+                pasteTokens[id] = (pasteTokens[id] ?? 0) &+ 1
+                session.buffers[id]?.pasteSuggestion = nil
+            }
+        }
         s.save()
         if appearanceChanged { s.appearance.apply() }
         if iconChanged { applyAppIcon() }

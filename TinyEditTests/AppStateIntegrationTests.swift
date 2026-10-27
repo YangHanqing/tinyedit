@@ -243,6 +243,12 @@ final class AppStateIntegrationTests: XCTestCase {
         let url = files.appendingPathComponent("clean.swift")
         try "let a = 1\n".write(to: url, atomically: true, encoding: .utf8)
         let s = await launch()
+        let previousSettings = s.settings
+        defer { previousSettings.save() }
+        var cleanupSettings = previousSettings
+        cleanupSettings.trimTrailingWhitespaceOnSave = true
+        cleanupSettings.ensureFinalNewline = true
+        s.updateSettings(cleanupSettings)
         await s.openURLsAsync([url])
         s.host.activate(s.activeStore!, settings: s.settings)
         s.host.textView.insertText("let b = 2   \nlet c = 3", replacementRange: NSRange(location: 10, length: 0))

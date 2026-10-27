@@ -38,6 +38,7 @@ enum FlushResult { case success, failed }
 /// The top-right card for text read from a picture.
 enum ImageTextState: Equatable, Sendable {
     case recognizing
+    case recognizingSlow
     /// Read after the tab changed or was switched away from, so not inserted on its own: Insert or Copy.
     case offer(String)
 }

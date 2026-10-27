@@ -127,9 +127,13 @@ extension AppState {
         let generation = store.generation
         let wholeTab = NSRange(location: 0, length: ns.length)
         let detectCurl = settings.recognizeCurlCommands
+        let detectCleanup = settings.suggestPasteCleanup
+        let detectDecodes = settings.suggestPasteDecodes
+        let detectLanguage = settings.suggestPasteLanguage
+        guard detectCurl || detectCleanup || detectDecodes || detectLanguage else { return }
         pasteTasks[id] = Task { [weak self] in
             let found = await Task.detached(priority: .userInitiated) { () -> PasteSuggestion? in
-                if let pastedText, let pasted {
+                if detectCleanup, let pastedText, let pasted {
                     let report = TextCleanup.scan(pastedText)
                     if !report.isEmpty {
                         return PasteSuggestion(cleanup: PasteCleanup(report: report, range: pasted, fillsTab: fillsTab))
@@ -139,9 +143,10 @@ extension AppState {
                     return PasteSuggestion(curl: CurlOffer(command, range: pastedText != nil ? pasted ?? wholeTab : wholeTab))
                 }
                 if let text {
-                    return PasteDecodeDetector.suggestion(in: text, currentLanguage: language)
+                    return PasteDecodeDetector.suggestion(in: text, currentLanguage: language,
+                                                          suggestDecodes: detectDecodes, suggestLanguage: detectLanguage)
                 }
-                guard let pastedText, let pasted else { return nil }
+                guard detectDecodes, let pastedText, let pasted else { return nil }
                 return PasteDecodeDetector.decodeSuggestion(in: pastedText, at: pasted.location)
             }.value
             guard !Task.isCancelled, let self, store.generation == generation, self.pasteTokens[id] == token,

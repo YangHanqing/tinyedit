@@ -6617,54 +6617,106 @@
         }
       }
     },
-    "Chars %lld": {
+    "Selected %lld chars": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chars %lld"
+            "value": "Selected %lld chars"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "字符 %lld"
+            "value": "已选 %lld 字符"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "字元 %lld"
+            "value": "已選 %lld 字元"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "文字 %lld"
+            "value": "選択 %lld 文字"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "문자 %lld"
+            "value": "선택한 문자 %lld"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Zeichen %lld"
+            "value": "Ausgewählt: %lld Zeichen"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Caractères %lld"
+            "value": "Sélection : %lld caractères"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Caracteres %lld"
+            "value": "Selección: %lld caracteres"
+          }
+        }
+      }
+    },
+    "Characters include spaces and line breaks. A combined emoji counts as one character.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Characters include spaces and line breaks. A combined emoji counts as one character."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "字符数包含空格和换行，组合表情按一个字符计。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "字元數包含空格和換行，組合表情按一個字元計。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字数には空白と改行を含みます。結合された絵文字は1文字として数えます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "문자 수에는 공백과 줄바꿈이 포함됩니다. 결합된 이모지는 한 문자로 셉니다."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leerzeichen und Zeilenumbrüche zählen mit. Ein zusammengesetztes Emoji zählt als ein Zeichen."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les espaces et les sauts de ligne sont comptés. Un emoji composé compte pour un caractère."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se incluyen espacios y saltos de línea. Un emoji combinado cuenta como un carácter."
           }
         }
       }
@@ -9280,13 +9332,13 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "字数 %lld"
+            "value": "字词 %lld（中文按字，英文按词）"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "字數 %lld"
+            "value": "字詞 %lld（中文按字，英文按詞）"
           }
         },
         "ja": {
@@ -25293,6 +25345,838 @@
           "stringUnit": {
             "state": "translated",
             "value": "No se pudo crear el archivo de ejemplo: %@"
+          }
+        }
+      }
+    },
+    "Recognize document structure and tables": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recognize document structure and tables"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "识别文档结构和表格"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "辨識文件結構與表格"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文書構造と表を認識"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "문서 구조 및 표 인식"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dokumentstruktur und Tabellen erkennen"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnaître la structure des documents et les tableaux"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconocer la estructura de documentos y tablas"
+          }
+        }
+      }
+    },
+    "Document and table recognition requires macOS 26 or later. Tables are inserted as Markdown; the first row becomes the header.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Document and table recognition requires macOS 26 or later. Tables are inserted as Markdown; the first row becomes the header."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文档和表格识别需要 macOS 26 或更高版本。表格以 Markdown 格式插入，首行作为表头。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件與表格辨識需要 macOS 26 或更新版本。表格以 Markdown 格式插入，第一列作為標題列。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文書と表の認識には macOS 26 以降が必要です。表は Markdown 形式で挿入され、最初の行が見出しになります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "문서 및 표 인식에는 macOS 26 이상이 필요합니다. 표는 Markdown 형식으로 삽입되며 첫 행은 머리글이 됩니다."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Dokument- und Tabellenerkennung erfordert macOS 26 oder neuer. Tabellen werden als Markdown eingefügt; die erste Zeile wird zur Kopfzeile."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La reconnaissance des documents et tableaux nécessite macOS 26 ou ultérieur. Les tableaux sont insérés en Markdown ; la première ligne devient l’en-tête."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El reconocimiento de documentos y tablas requiere macOS 26 o posterior. Las tablas se insertan en Markdown; la primera fila se convierte en el encabezado."
+          }
+        }
+      }
+    },
+    "First recognition or model loading may take longer. Please wait…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "First recognition or model loading may take longer. Please wait…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首次识别或模型加载可能耗时较长，请稍候…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首次辨識或模型載入可能需要較長時間，請稍候…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "初回の認識やモデルの読み込みには時間がかかる場合があります。お待ちください…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최초 인식 또는 모델 로딩에는 시간이 더 걸릴 수 있습니다. 잠시 기다려 주세요…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die erste Erkennung oder das Laden des Modells kann länger dauern. Bitte warten…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La première reconnaissance ou le chargement du modèle peut prendre plus de temps. Veuillez patienter…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El primer reconocimiento o la carga del modelo puede tardar más. Espera un momento…"
+          }
+        }
+      }
+    },
+    "Editor settings category": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editor settings category"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑器设置分类"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "編輯器設定分類"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エディタ設定の分類"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "편집기 설정 분류"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kategorie der Editoreinstellungen"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Catégorie des réglages de l’éditeur"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Categoría de ajustes del editor"
+          }
+        }
+      }
+    },
+    "Display": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顯示"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표시"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anzeige"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Affichage"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visualización"
+          }
+        }
+      }
+    },
+    "Input": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "輸入"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입력"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eingabe"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisie"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entrada"
+          }
+        }
+      }
+    },
+    "Highlight matching brackets": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Highlight matching brackets"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高亮匹配括号"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "醒目顯示配對括號"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対応する括弧を強調表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일치하는 괄호 강조"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zusammengehörige Klammern hervorheben"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Surligner les parenthèses correspondantes"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resaltar los paréntesis coincidentes"
+          }
+        }
+      }
+    },
+    "Highlight other occurrences of selected text": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Highlight other occurrences of selected text"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高亮选中文本的其他匹配"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "醒目顯示所選文字的其他相符處"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択したテキストの他の一致箇所を強調表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 텍스트의 다른 일치 항목 강조"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weitere Vorkommen des ausgewählten Textes hervorheben"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Surligner les autres occurrences du texte sélectionné"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resaltar otras apariciones del texto seleccionado"
+          }
+        }
+      }
+    },
+    "Continue indentation on Return": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue indentation on Return"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回车时延续缩进"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 Return 時延續縮排"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Returnでインデントを継続"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Return 키로 들여쓰기 유지"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einrückung bei Return fortsetzen"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conserver l’indentation avec Retour"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mantener la sangría al pulsar Retorno"
+          }
+        }
+      }
+    },
+    "Delete indentation one level at a time": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete indentation one level at a time"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退格时按缩进级别删除"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退格時逐級刪除縮排"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インデントを1段階ずつ削除"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "들여쓰기를 한 단계씩 삭제"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einrückung stufenweise löschen"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer l’indentation par niveau"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminar la sangría por niveles"
+          }
+        }
+      }
+    },
+    "Continue Markdown tasks on Return": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue Markdown tasks on Return"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回车时续写 Markdown 任务项"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 Return 時接續 Markdown 待辦事項"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ReturnでMarkdownタスクを継続"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Return 키로 Markdown 작업 이어 쓰기"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown-Aufgaben bei Return fortsetzen"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuer les tâches Markdown avec Retour"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuar las tareas Markdown al pulsar Retorno"
+          }
+        }
+      }
+    },
+    "Suggest language while typing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggest language while typing"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入时提示文本语言"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "輸入時建議文字語言"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力中に言語を提案"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입력 중 언어 제안"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sprache während der Eingabe vorschlagen"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggérer le langage pendant la saisie"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sugerir el lenguaje al escribir"
+          }
+        }
+      }
+    },
+    "Suggest decoding pasted text": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggest decoding pasted text"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴后提示解码"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "貼上後建議解碼"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "貼り付けたテキストのデコードを提案"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "붙여넣은 텍스트 디코딩 제안"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dekodierung eingefügter Texte vorschlagen"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggérer le décodage du texte collé"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sugerir la decodificación del texto pegado"
+          }
+        }
+      }
+    },
+    "Suggest language and JSON formatting after paste": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggest language and JSON formatting after paste"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴后提示语言和 JSON 格式化"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "貼上後建議語言與 JSON 格式化"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "貼り付け後に言語とJSON整形を提案"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "붙여넣기 후 언어 및 JSON 서식 제안"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sprache und JSON-Formatierung nach dem Einfügen vorschlagen"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggérer le langage et le formatage JSON après collage"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sugerir el lenguaje y el formato JSON al pegar"
+          }
+        }
+      }
+    },
+    "Suggest cleaning ANSI codes and invisible characters": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggest cleaning ANSI codes and invisible characters"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提示清理粘贴的 ANSI 码和不可见字符"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建議清理貼上的 ANSI 碼與不可見字元"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ANSIコードと不可視文字の除去を提案"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ANSI 코드 및 보이지 않는 문자 정리 제안"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entfernen von ANSI-Codes und unsichtbaren Zeichen vorschlagen"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggérer la suppression des codes ANSI et des caractères invisibles"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sugerir la limpieza de códigos ANSI y caracteres invisibles"
+          }
+        }
+      }
+    },
+    "Suggestions leave the text unchanged until you apply them. Text tools remain available in the Tools menu.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggestions leave the text unchanged until you apply them. Text tools remain available in the Tools menu."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用建议前不会修改文本。关闭建议后，仍可在“工具”菜单中使用文本工具。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "套用建議前不會修改文字。關閉建議後，仍可在「工具」選單中使用文字工具。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提案を適用するまでテキストは変更されません。テキストツールは「ツール」メニューから引き続き使用できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제안을 적용하기 전에는 텍스트가 변경되지 않습니다. 텍스트 도구는 도구 메뉴에서 계속 사용할 수 있습니다."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorschläge ändern den Text erst beim Anwenden. Textwerkzeuge bleiben im Menü „Werkzeuge“ verfügbar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les suggestions ne modifient le texte que lorsque vous les appliquez. Les outils de texte restent disponibles dans le menu Outils."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las sugerencias no modifican el texto hasta que las apliques. Las herramientas de texto siguen disponibles en el menú Herramientas."
           }
         }
       }

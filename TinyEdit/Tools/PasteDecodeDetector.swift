@@ -70,11 +70,11 @@ enum PasteDecodeDetector {
 
     /// `nil` when the text is empty, too large, or matches nothing.
     static func suggestion(in document: String, currentLanguage: EditorLanguage,
-                           timeZone: TimeZone = .current) -> PasteSuggestion? {
+                           timeZone: TimeZone = .current, suggestDecodes: Bool = true, suggestLanguage: Bool = true) -> PasteSuggestion? {
         guard document.utf8.count <= maxBytes else { return nil }
-        var result = decodeSuggestion(in: document, at: 0, timeZone: timeZone) ?? PasteSuggestion()
+        var result = (suggestDecodes ? decodeSuggestion(in: document, at: 0, timeZone: timeZone) : nil) ?? PasteSuggestion()
         let complete = document.utf16.count <= ContentLanguageDetector.sampleLimit
-        if let detected = ContentLanguageDetector.detect(document, isComplete: complete) {
+        if suggestLanguage, let detected = ContentLanguageDetector.detect(document, isComplete: complete) {
             if detected == .json, case .formatted = JSONFormatter.format(text: document, selection: nil) {
                 result.canFormatJSON = true
             }

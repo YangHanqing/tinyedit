@@ -66,14 +66,22 @@ struct SuggestionCard: View {
 
     @ViewBuilder private func imageTextCard(_ state: ImageTextState) -> some View {
         switch state {
-        case .recognizing:
+        case .recognizing, .recognizingSlow:
             chrome {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
                         .padding(.trailing, 2)
-                    Text("Recognizing text in image…").foregroundStyle(Color.textSecondary)
-                        .padding(.trailing, 4)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Recognizing text in image…")
+                        if state == .recognizingSlow {
+                            Text("First recognition or model loading may take longer. Please wait…")
+                                .font(.caption)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .foregroundStyle(Color.textSecondary)
+                    .padding(.trailing, 4)
                     CardButton("Cancel", help: String(localized: "Stop recognizing text"), prominent: false) {
                         appState.cancelImageText()
                     }

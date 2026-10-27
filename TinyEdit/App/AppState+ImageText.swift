@@ -92,9 +92,15 @@ extension AppState {
         let correction = language == .plain || language == .markdown
         let indent = activeIndentStyle
         let tabWidth = settings.tabWidth
+        let documentTables = settings.recognizeDocumentTables
         let task = Task { [weak self] in
+            let slowNotice = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                self?.showSlowImageRecognition(id, token: token)
+            }
+            defer { slowNotice.cancel() }
             let work = Task.detached(priority: .userInitiated) {
-                try await ImageTextRecognizer.recognize(images, languageCorrection: correction, indent: indent, tabWidth: tabWidth)
+                try await ImageTextRecognizer.recognize(images, languageCorrection: correction, indent: indent, tabWidth: tabWidth, recognizeDocumentTables: documentTables)
             }
             let result = await withTaskCancellationHandler { await work.result } onCancel: { work.cancel() }
             guard !Task.isCancelled, let self else { return }
@@ -102,6 +108,12 @@ extension AppState {
         }
         imageTextJobs[id] = ImageTextJob(token: token, range: range, generation: store.generation, task: task)
         if session.buffers[id]?.imageText != .recognizing { session.buffers[id]?.imageText = .recognizing }
+    }
+
+    /// A late timer must not revive a cancelled, completed, or replaced job.
+    func showSlowImageRecognition(_ id: UUID, token: UInt64) {
+        guard imageTextJobs[id]?.token == token, session.buffers[id]?.imageText == .recognizing else { return }
+        session.buffers[id]?.imageText = .recognizingSlow
     }
 
     /// Inserted where the paste or drop was if the tab is still showing and unchanged; otherwise offered on the

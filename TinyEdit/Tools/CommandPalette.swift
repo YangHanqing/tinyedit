@@ -68,6 +68,15 @@ struct PaletteSection: Identifiable {
 /// would do nothing (the arrows skip them), and counts what a cleanup would remove before it runs.
 struct CommandPalette: View {
     @Environment(AppState.self) private var appState
+
+    var body: some View {
+        if appState.paletteVisible { CommandPalettePanel() }
+    }
+}
+
+/// Keep search and focus state scoped to each presentation of the panel.
+private struct CommandPalettePanel: View {
+    @Environment(AppState.self) private var appState
     @State private var query = ""
     @State private var index = 0
     @FocusState private var focused: Bool
@@ -89,7 +98,7 @@ struct CommandPalette: View {
     }
 
     var body: some View {
-        if appState.paletteVisible { panel }
+        panel
     }
 
     /// The rows to draw, and the enabled commands they hold in keyboard order (a suggested command appears twice).
@@ -165,7 +174,13 @@ struct CommandPalette: View {
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.separator))
         .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
         .padding(.top, 8)
-        .onAppear { query = ""; index = 0; focused = true }
+        .onAppear { query = ""; index = 0 }
+        .task {
+            // Let SwiftUI attach the search field before requesting keyboard focus.
+            await Task.yield()
+            guard !Task.isCancelled, appState.paletteVisible else { return }
+            focused = true
+        }
         .onChange(of: query) { _, _ in index = 0 }
         // Clicking back into the editor dismisses the palette.
         .onChange(of: focused) { _, f in if !f { appState.hidePalette() } }

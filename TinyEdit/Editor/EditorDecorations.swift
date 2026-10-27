@@ -1,14 +1,16 @@
 import AppKit
 
-/// Which editor decorations are on, from `EditorSettings`. Bracket and occurrence highlights are always on.
+/// Which editor decorations are on, from `EditorSettings`. Each decoration can be disabled independently.
 struct EditorDecorationOptions: Equatable {
     var currentLine = true
     var indentGuides = true
     var invisibles = false
+    var matchingBrackets = true
+    var selectionOccurrences = true
     var jsonMarks = JSONMarkOptions()
 }
 
-/// Which JSON value marks are drawn (Settings ▸ Editor ▸ JSON). All on by default.
+/// Which JSON value marks are drawn (Settings ▸ Editor ▸ JSON). Generic decode marks are off by default.
 struct JSONMarkOptions: Equatable {
     var images = true
     var links = true
@@ -16,7 +18,7 @@ struct JSONMarkOptions: Equatable {
     var times = true
     /// A JWT's expiry; with this off, a JWT gets the decode icon when `decodes` is on.
     var jwtExpiry = true
-    var decodes = true
+    var decodes = false
 
     /// The mark as drawn under these options: a JWT's expiry dropped when it is off, nil when hidden.
     func shown(_ kind: JSONValueMark.Kind) -> JSONValueMark.Kind? {
@@ -115,13 +117,13 @@ extension EditorTextView {
             result.currentLine = caretLineRect(sel.location, text: text, fragments: fragments, origin: origin, lineHeight: lineHeight)
         }
 
-        if caretOnly, let (near, far) = BracketMatcher.match(in: text, caret: sel.location) {
+        if decorationOptions.matchingBrackets, caretOnly, let (near, far) = BracketMatcher.match(in: text, caret: sel.location) {
             for r in [near, far] where r.location >= visibleStart && NSMaxRange(r) <= visibleEnd {
                 result.brackets += segmentRects(r, lm: lm, cs: cs, origin: origin)
             }
         }
 
-        if selectedRanges.count == 1, (1...EditorDecorations.occurrenceMaxLength).contains(sel.length), NSMaxRange(sel) <= text.length {
+        if decorationOptions.selectionOccurrences, selectedRanges.count == 1, (1...EditorDecorations.occurrenceMaxLength).contains(sel.length), NSMaxRange(sel) <= text.length {
             let needle = text.substring(with: sel)
             if !needle.contains("\n"), !needle.allSatisfy({ $0 == " " || $0 == "\t" }) {
                 let wholeWord = needle.unicodeScalars.allSatisfy(Self.isWordScalar)

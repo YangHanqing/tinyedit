@@ -13,11 +13,15 @@ struct StatusBar: View {
             }
             if let selection = appState.selectionStats {
                 HStack(spacing: 8) {
-                    Text("Chars \(selection.characters)")
-                    Text("Words \(selection.words)")
+                    Text("Selected \(selection.characters) chars")
                     if selection.lines > 1 { Text("Lines \(selection.lines)") }
                 }
-                .toolTip(String(localized: "UTF-8 bytes: \(selection.utf8Bytes)"))
+                .monospacedDigit()
+                .toolTip([
+                    String(localized: "Characters include spaces and line breaks. A combined emoji counts as one character."),
+                    String(localized: "Words \(selection.words)"),
+                    String(localized: "UTF-8 bytes: \(selection.utf8Bytes)")
+                ].joined(separator: "\n"))
             }
             if let tasks = s.tasks {
                 Text("Tasks \(tasks.done)/\(tasks.total)")
@@ -90,15 +94,12 @@ struct StatusBar: View {
         .background(Color.chromeBackground)
     }
 
-    /// The member's path (click copies it), the copy buttons, then what the value offers: Open Link, Query,
-    /// Preview or Decode in place of Open Value, and a Unix time or a color swatch to read.
+    /// The copy buttons, then what the value offers: Open Link, Query, Preview or Decode in place of
+    /// Open Value, and a Unix time or a color swatch to read. The path comes last to keep the buttons stable.
     private func jsonButtons(_ json: JSONCaretInfo) -> some View {
         let v = json.value
         let host = v.link?.host() ?? ""
         return HStack(spacing: 2) {
-            StatusGhostButton(json.path, hint: String(localized: "Copy the path \(json.path)"), maxWidth: 220) {
-                appState.copyJSONPath()
-            }
             if json.hasKey {
                 StatusGhostButton(String(localized: "Copy Key"),
                                   hint: String(localized: "Copy the key of \(json.path)")) { appState.copyJSONKey() }
@@ -137,6 +138,9 @@ struct StatusBar: View {
             }
             if let color = v.color {
                 ColorSwatch(color: color)
+            }
+            StatusGhostButton(json.path, hint: String(localized: "Copy the path \(json.path)"), maxWidth: 220) {
+                appState.copyJSONPath()
             }
         }
     }
@@ -184,7 +188,7 @@ private struct StatusGhostButton: View {
                 .truncationMode(.middle)
                 .foregroundStyle(hovering ? Color.textPrimary : Color.textSecondary)
                 .padding(.horizontal, 6)
-                .frame(maxWidth: maxWidth)
+                .frame(maxWidth: maxWidth, alignment: .leading)
                 .frame(height: 18)
                 .background(hovering ? Color.tabHoverBackground : .clear, in: RoundedRectangle(cornerRadius: 4))
                 .contentShape(Rectangle())

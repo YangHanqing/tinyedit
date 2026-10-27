@@ -77,6 +77,9 @@ enum EditorConfiguration {
         tv.selectedTextAttributes = [.backgroundColor: Theme.textSelection]
         tv.typingAttributes = attrs
         tv.defaultParagraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle
+        tv.autoIndent = settings.autoIndent
+        tv.smartBackspace = settings.smartBackspace
+        tv.continueMarkdownTasks = settings.continueMarkdownTasks
         tv.tabWidth = settings.tabWidth
         tv.decorationOptions = settings.decorationOptions
         tv.textContainerInset = NSSize(width: 8, height: 4)

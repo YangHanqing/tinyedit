@@ -98,86 +98,144 @@ private struct GeneralSettingsPane: View {
 
 private struct EditorSettingsPane: View {
     @Environment(AppState.self) private var appState
+    private enum Category: Hashable { case display, input, paste, save, json }
+    @State private var category = Category.display
 
     var body: some View {
-        let s = appState.settings
-        Form {
-            Section {
-                LabeledContent("Font size") {
-                    Text("\(Int(s.fontSize)) pt").monospacedDigit()
-                    Stepper("Font size", value: appState.setting(\.fontSize), in: EditorSettings.fontSizeRange, step: 1)
-                        .labelsHidden()
+        VStack(spacing: 0) {
+            Picker("Editor settings category", selection: $category) {
+                Text("Display").tag(Category.display)
+                Text("Input").tag(Category.input)
+                Text("Paste").tag(Category.paste)
+                Text("On Save").tag(Category.save)
+                Text(verbatim: "JSON").tag(Category.json)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding([.horizontal, .top], 20)
+            Form {
+                switch category {
+                case .display: displaySettings
+                case .input: inputSettings
+                case .paste: pasteSettings
+                case .save: saveSettings
+                case .json: jsonSettings
                 }
-                Toggle("Word wrap", isOn: appState.setting(\.wordWrap))
-                Toggle("Show line numbers", isOn: appState.setting(\.showLineNumbers))
-                Toggle("Highlight current line", isOn: appState.setting(\.highlightCurrentLine))
-                Toggle("Show indent guides", isOn: appState.setting(\.showIndentGuides))
-                Toggle("Show invisible characters", isOn: appState.setting(\.showInvisibles))
             }
-            Section {
-                Picker("Indent using", selection: appState.setting(\.insertSpaces)) {
-                    Text("Spaces").tag(true)
-                    Text("Tabs").tag(false)
-                }
-                .pickerStyle(.segmented)
-                LabeledContent("Tab width") {
-                    Text(s.tabWidth, format: .number).monospacedDigit()
-                    Stepper("Tab width", value: appState.setting(\.tabWidth), in: EditorSettings.tabWidthRange)
-                        .labelsHidden()
-                }
-                Toggle("Detect indentation from file content", isOn: appState.setting(\.detectIndentation))
-            } header: {
-                Text("Indentation")
-            } footer: {
-                Text("Tab width sets how wide a TAB character is displayed. When indenting with spaces, it is also the number of spaces per indent level. The indent style applies only when no other rule does: Makefile always uses tabs and YAML always uses spaces; with detection on, a document that is already indented keeps its own indentation; otherwise Go uses tabs and Python uses 4 spaces. The Indent menu in the status bar sets the indent style for the current document and takes precedence over these rules.")
-                    .settingsFootnote()
-            }
-            Section {
-                Toggle("Trim trailing whitespace", isOn: appState.setting(\.trimTrailingWhitespaceOnSave))
-                Toggle("End the file with a newline", isOn: appState.setting(\.ensureFinalNewline))
-            } header: {
-                Text("On Save")
-            } footer: {
-                Text("Markdown and Diff keep trailing whitespace: it is a line break in Markdown and part of a diff's blank lines.")
-                    .settingsFootnote()
-            }
-            Section {
-                Picker("Inline calculation", selection: appState.setting(\.inlineCalculation)) {
-                    ForEach(InlineCalculationMode.allCases, id: \.self) { Text($0.label).tag($0) }
-                }
-            } footer: {
-                Text("Shows the result of arithmetic on the cursor line. Press Tab to insert it.").settingsFootnote()
-            }
-            Section {
-                Toggle("Recognize text in pasted and dropped images", isOn: appState.setting(\.recognizeTextInImages))
-            } footer: {
-                Text("Pasting or dropping a picture inserts the text in it. Recognition runs on this Mac; nothing is uploaded.")
-                    .settingsFootnote()
-            }
-            Section {
-                Toggle("Offer to send pasted curl commands", isOn: appState.setting(\.recognizeCurlCommands))
-            } footer: {
-                Text("Pasting a curl command shows the request it describes with a Send button. Nothing is sent until you click Send.")
-                    .settingsFootnote()
-            }
-            Section {
-                Group {
-                    Toggle("Picture preview icons", isOn: appState.setting(\.jsonMarkImages))
-                    Toggle("Link icons", isOn: appState.setting(\.jsonMarkLinks))
-                    Toggle("Color swatches", isOn: appState.setting(\.jsonMarkColors))
-                    Toggle("Local time of Unix timestamps", isOn: appState.setting(\.jsonMarkTimes))
-                    Toggle("JWT expiry", isOn: appState.setting(\.jsonMarkJWTExpiry))
-                    Toggle("Decode icons", isOn: appState.setting(\.jsonMarkDecodes))
-                }
-                .toggleStyle(.checkbox)
-            } header: {
-                Text(verbatim: "JSON")
-            } footer: {
-                Text("Shown after the line in JSON tabs, one per line. Click an icon or a time to preview, open, decode or copy it.")
-                    .settingsFootnote()
-            }
+            .id(category)
         }
     }
+
+    @ViewBuilder private var displaySettings: some View {
+        let s = appState.settings
+        Section {
+            LabeledContent("Font size") {
+                Text("\(Int(s.fontSize)) pt").monospacedDigit()
+                Stepper("Font size", value: appState.setting(\.fontSize), in: EditorSettings.fontSizeRange, step: 1)
+                    .labelsHidden()
+            }
+            Toggle("Word wrap", isOn: appState.setting(\.wordWrap))
+            Toggle("Show line numbers", isOn: appState.setting(\.showLineNumbers))
+            Toggle("Highlight current line", isOn: appState.setting(\.highlightCurrentLine))
+            Toggle("Show indent guides", isOn: appState.setting(\.showIndentGuides))
+            Toggle("Highlight matching brackets", isOn: appState.setting(\.highlightMatchingBrackets))
+            Toggle("Highlight other occurrences of selected text", isOn: appState.setting(\.highlightSelectionOccurrences))
+            Toggle("Show invisible characters", isOn: appState.setting(\.showInvisibles))
+        }
+    }
+
+    @ViewBuilder private var inputSettings: some View {
+        let s = appState.settings
+        Section {
+            Picker("Indent using", selection: appState.setting(\.insertSpaces)) {
+                Text("Spaces").tag(true)
+                Text("Tabs").tag(false)
+            }
+            .pickerStyle(.segmented)
+            LabeledContent("Tab width") {
+                Text(s.tabWidth, format: .number).monospacedDigit()
+                Stepper("Tab width", value: appState.setting(\.tabWidth), in: EditorSettings.tabWidthRange)
+                    .labelsHidden()
+            }
+            Toggle("Detect indentation from file content", isOn: appState.setting(\.detectIndentation))
+            Toggle("Continue indentation on Return", isOn: appState.setting(\.autoIndent))
+            Toggle("Delete indentation one level at a time", isOn: appState.setting(\.smartBackspace))
+        } header: {
+            Text("Indentation")
+        } footer: {
+            Text("Tab width sets how wide a TAB character is displayed. When indenting with spaces, it is also the number of spaces per indent level. The indent style applies only when no other rule does: Makefile always uses tabs and YAML always uses spaces; with detection on, a document that is already indented keeps its own indentation; otherwise Go uses tabs and Python uses 4 spaces. The Indent menu in the status bar sets the indent style for the current document and takes precedence over these rules.")
+                .settingsFootnote()
+        }
+        Section {
+            Toggle("Continue Markdown tasks on Return", isOn: appState.setting(\.continueMarkdownTasks))
+            Toggle("Suggest language while typing", isOn: appState.setting(\.suggestLanguageWhileTyping))
+        }
+        Section {
+            Picker("Inline calculation", selection: appState.setting(\.inlineCalculation)) {
+                ForEach(InlineCalculationMode.allCases, id: \.self) { Text($0.label).tag($0) }
+            }
+        } footer: {
+            Text("Shows the result of arithmetic on the cursor line. Press Tab to insert it.").settingsFootnote()
+        }
+    }
+
+    @ViewBuilder private var pasteSettings: some View {
+        Section {
+            Toggle("Suggest decoding pasted text", isOn: appState.setting(\.suggestPasteDecodes))
+            Toggle("Suggest language and JSON formatting after paste", isOn: appState.setting(\.suggestPasteLanguage))
+            Toggle("Suggest cleaning ANSI codes and invisible characters", isOn: appState.setting(\.suggestPasteCleanup))
+        } footer: {
+            Text("Suggestions leave the text unchanged until you apply them. Text tools remain available in the Tools menu.").settingsFootnote()
+        }
+        Section {
+            Toggle("Recognize text in pasted and dropped images", isOn: appState.setting(\.recognizeTextInImages))
+            Toggle("Recognize document structure and tables", isOn: appState.setting(\.recognizeDocumentTables))
+                .disabled(!EditorSettings.supportsDocumentTables || !appState.settings.recognizeTextInImages)
+        } footer: {
+            Text("Pasting or dropping a picture inserts the text in it. Recognition runs on this Mac; nothing is uploaded.")
+                .settingsFootnote()
+            Text("Document and table recognition requires macOS 26 or later. Tables are inserted as Markdown; the first row becomes the header.")
+                .settingsFootnote()
+        }
+        Section {
+            Toggle("Offer to send pasted curl commands", isOn: appState.setting(\.recognizeCurlCommands))
+        } footer: {
+            Text("Pasting a curl command shows the request it describes with a Send button. Nothing is sent until you click Send.")
+                .settingsFootnote()
+        }
+    }
+
+    @ViewBuilder private var saveSettings: some View {
+        Section {
+            Toggle("Trim trailing whitespace", isOn: appState.setting(\.trimTrailingWhitespaceOnSave))
+            Toggle("End the file with a newline", isOn: appState.setting(\.ensureFinalNewline))
+        } header: {
+            Text("On Save")
+        } footer: {
+            Text("Markdown and Diff keep trailing whitespace: it is a line break in Markdown and part of a diff's blank lines.")
+                .settingsFootnote()
+        }
+    }
+
+    @ViewBuilder private var jsonSettings: some View {
+        Section {
+            Group {
+                Toggle("Picture preview icons", isOn: appState.setting(\.jsonMarkImages))
+                Toggle("Link icons", isOn: appState.setting(\.jsonMarkLinks))
+                Toggle("Color swatches", isOn: appState.setting(\.jsonMarkColors))
+                Toggle("Local time of Unix timestamps", isOn: appState.setting(\.jsonMarkTimes))
+                Toggle("JWT expiry", isOn: appState.setting(\.jsonMarkJWTExpiry))
+                Toggle("Decode icons", isOn: appState.setting(\.jsonMarkDecodes))
+            }
+            .toggleStyle(.checkbox)
+        } header: {
+            Text(verbatim: "JSON")
+        } footer: {
+            Text("Shown after the line in JSON tabs, one per line. Click an icon or a time to preview, open, decode or copy it.")
+                .settingsFootnote()
+        }
+    }
+
 }
 
 private extension Text {

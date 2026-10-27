@@ -18,6 +18,8 @@ final class EditorTextView: NSTextView {
     /// Asked first by every paste variant. True when it handled the pasteboard itself (file references,
     /// a picture without text), so AppKit does not read it.
     var onPasteboard: ((NSPasteboard) -> Bool)?
+    /// Menu validation must include the formats handled outside NSTextView's text paste.
+    var canPasteboard: ((NSPasteboard) -> Bool)?
 
     private func fileURLs(from pb: NSPasteboard) -> [URL] {
         (pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
@@ -130,6 +132,8 @@ final class EditorTextView: NSTextView {
         switch item.action {
         case #selector(undo(_:)): return isEditable && undoManager?.canUndo == true
         case #selector(redo(_:)): return isEditable && undoManager?.canRedo == true
+        case #selector(paste(_:)), #selector(pasteAsPlainText(_:)), #selector(pasteAsRichText(_:)):
+            return isEditable && (canPasteboard?(.general) == true || super.validateUserInterfaceItem(item))
         default: return super.validateUserInterfaceItem(item)
         }
     }
@@ -138,6 +142,10 @@ final class EditorTextView: NSTextView {
     var indentStyle: (() -> IndentStyle)?
     /// The active buffer's language, read on Return and on clicks: Markdown continues task items, and
     /// Markdown and Plain Text flip a task's box when it is clicked. Nil leaves task lists alone.
+    var autoIndent = true
+    var smartBackspace = true
+    var continueMarkdownTasks = true
+
     var taskLanguage: (() -> EditorLanguage)?
 
     /// The marked values of a JSON tab, in document order, read in the overlay pass. Empty draws no marks.
@@ -192,7 +200,7 @@ final class EditorTextView: NSTextView {
     /// Backspace inside space indentation deletes back to the previous indent stop.
     override func deleteBackward(_ sender: Any?) {
         let sel = selectedRange()
-        if let text = editedText, !hasMarkedText(), selectedRanges.count == 1, sel.length == 0,
+        if smartBackspace, let text = editedText, !hasMarkedText(), selectedRanges.count == 1, sel.length == 0,
            let range = IndentEditing.softTabDeletion(in: text, caret: sel.location, style: indentStyle?() ?? .spaces(tabWidth)) {
             setSelectedRange(range)
         }
@@ -371,11 +379,12 @@ final class EditorTextView: NSTextView {
     /// (`insertNewlineIgnoringFieldEditor`) does neither.
     override func insertNewline(_ sender: Any?) {
         guard let text = editedText else { return super.insertNewline(sender) }
-        if let language = taskLanguage?(), TaskList.continuesOnReturn(language), !hasMarkedText(), selectedRanges.count == 1,
+        if continueMarkdownTasks, let language = taskLanguage?(), TaskList.continuesOnReturn(language), !hasMarkedText(), selectedRanges.count == 1,
            let edit = TaskList.newline(in: text, selection: selectedRange()) {
             insertText(edit.string, replacementRange: edit.range)
             return
         }
+        guard autoIndent else { return super.insertNewline(sender) }
         let edit = IndentEditing.newline(in: text, selection: selectedRange())
         insertText(edit.string, replacementRange: edit.range)
     }

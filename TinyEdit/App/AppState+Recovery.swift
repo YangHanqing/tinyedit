@@ -162,6 +162,7 @@ extension AppState {
                 buffer = EditorBuffer(id: entry.id, title: "Recovered \(recoveredCounter)")
                 buffer.dirty = true
             }
+            if !settings.suggestLanguageWhileTyping { buffer.languageSuggestion = nil }
             makeStore(for: buffer, text: entry.text)
             session.buffers[buffer.id] = buffer
             session.tabOrder.append(buffer.id)

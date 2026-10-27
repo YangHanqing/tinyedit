@@ -3,7 +3,7 @@ import Foundation
 
 /// Turns what Vision recognized in a picture into plain text that keeps the picture's layout: lines top to
 /// bottom, pieces of one line left to right, indentation from the left edge, a blank line where the gap
-/// between two lines is about a line high, and tables (macOS 26) as tab-separated rows. Pure geometry, so the
+/// between two lines is about a line high, and tables (macOS 26) as Markdown. Pure geometry, so the
 /// rules are testable without Vision.
 enum ImageTextLayout {
     /// One recognized run of text. `rect` is in image pixels with the origin at the top left.
@@ -68,18 +68,34 @@ enum ImageTextLayout {
                 previousWasTable = false
             case .table(let table):
                 if !out.isEmpty { out.append("") }
-                for row in table.rows {
-                    out.append(row.map { cell in
-                        cell.components(separatedBy: .newlines).joined(separator: " ")
-                            .replacingOccurrences(of: "\t", with: " ")
-                            .trimmingCharacters(in: .whitespaces)
-                    }.joined(separator: "\t"))
-                }
+                out.append(contentsOf: markdownTable(table.rows))
                 previousBottom = table.rect.maxY
                 previousWasTable = true
             }
         }
         return out.joined(separator: "\n")
+    }
+
+    /// Vision does not label headers. Use the first row as the Markdown header and pad missing cells.
+    static func markdownTable(_ rows: [[String]]) -> [String] {
+        guard let columns = rows.map(\.count).max(), columns > 0 else { return [] }
+        func cell(_ value: String) -> String {
+            var text = value.components(separatedBy: .newlines).joined(separator: " ")
+                .replacingOccurrences(of: "\t", with: " ")
+                .trimmingCharacters(in: .whitespaces)
+            text = text.replacingOccurrences(of: "&", with: "&amp;")
+                .replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: ">", with: "&gt;")
+            for character in ["\\", "|", "`", "*", "_", "[", "]"] {
+                text = text.replacingOccurrences(of: character, with: "\\" + character)
+            }
+            return text
+        }
+        var lines = rows.map { row in
+            "| " + (row.map(cell) + Array(repeating: "", count: columns - row.count)).joined(separator: " | ") + " |"
+        }
+        lines.insert("| " + Array(repeating: "---", count: columns).joined(separator: " | ") + " |", at: 1)
+        return lines
     }
 
     /// Lines whose vertical extents overlap by half the shorter one are one row, sorted left to right.

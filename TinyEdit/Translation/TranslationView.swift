@@ -30,7 +30,6 @@ struct TranslationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            header
             languageBar
             if preferences.engine == .custom {
                 DisclosureGroup("Extra Translation Instructions", isExpanded: $instructionsExpanded) {
@@ -66,7 +65,7 @@ struct TranslationView: View {
             footer
         }
         .padding(22)
-        .frame(width: 780, height: instructionsExpanded ? 640 : 560)
+        .frame(width: 780, height: instructionsExpanded ? 570 : 490)
         .foregroundStyle(Color.textPrimary)
         .background(Color.chromeBackground)
         .background {
@@ -94,26 +93,14 @@ struct TranslationView: View {
         .onDisappear { cancel() }
     }
 
-    private var header: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "character.bubble")
-                .font(.system(size: 19, weight: .medium)).foregroundStyle(Color.accent)
-                .frame(width: 40, height: 40)
-                .background(Color.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Translation").font(.system(size: 19, weight: .semibold))
-                Text(input.wholeDocument ? LocalizedStringKey("Translate Document") : LocalizedStringKey("Translate Selection"))
-                    .font(.system(size: 12)).foregroundStyle(Color.textSecondary)
-            }
-            Spacer()
-            Button { cancel(); dismiss() } label: {
-                Image(systemName: "xmark").font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.textSecondary).frame(width: 28, height: 28)
-                    .background(Color.tabHoverBackground, in: Circle())
-            }
-            .buttonStyle(.plain).keyboardShortcut(.cancelAction)
-            .accessibilityLabel(Text("Close")).toolTip(String(localized: "Close"))
+    private var closeButton: some View {
+        Button { cancel(); dismiss() } label: {
+            Image(systemName: "xmark").font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.textSecondary).frame(width: 28, height: 28)
+                .background(Color.tabHoverBackground, in: Circle())
         }
+        .buttonStyle(.plain).keyboardShortcut(.cancelAction)
+        .accessibilityLabel(Text("Close")).toolTip(String(localized: "Close"))
     }
 
     private var languageBar: some View {
@@ -125,26 +112,32 @@ struct TranslationView: View {
                 if !manualTarget { target = recommendedTarget() }
                 if !target.isEmpty { start() }
             }), automatic: "Auto Detect")
-            Image(systemName: "arrow.right").font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Color.textTertiary).padding(.top, 13)
-            languagePicker("Target Language", selection: Binding(get: { target }, set: { new in
-                guard target != new else { return }
-                reset()
-                target = new; manualTarget = true
-                if !target.isEmpty { start() }
-            }), automatic: "Choose Language")
+                .disabled(!ready)
+            HStack(spacing: 10) {
+                languagePicker("Target Language", selection: Binding(get: { target }, set: { new in
+                    guard target != new else { return }
+                    reset()
+                    target = new; manualTarget = true
+                    if !target.isEmpty { start() }
+                }), automatic: "Choose Language")
+                    .disabled(!ready)
+                closeButton
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .disabled(!ready)
+        .frame(minHeight: 28)
     }
 
     private func languagePicker(_ title: LocalizedStringKey, selection: Binding<String>, automatic: LocalizedStringKey) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.system(size: 11, weight: .medium)).foregroundStyle(Color.textSecondary)
+        HStack(spacing: 10) {
+            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.textSecondary)
+                .fixedSize()
             Picker(title, selection: selection) {
                 Text(automatic).tag("")
                 ForEach(languages, id: \.self) { Text(verbatim: TranslationLanguages.name($0)).tag($0) }
             }
-            .labelsHidden().controlSize(.large).frame(maxWidth: .infinity)
+            .labelsHidden().controlSize(.large)
+                .fixedSize().frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

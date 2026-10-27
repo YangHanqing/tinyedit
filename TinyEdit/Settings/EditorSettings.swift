@@ -65,19 +65,25 @@ struct EditorSettings: Equatable, Sendable {
     var detectIndentation = true
     var wordWrap = true
     var showLineNumbers = true
-    var appearance = AppearanceMode.dark
+    var appearance = AppearanceMode.system
     var appIcon = AppIconStyle.notepad
-    var backgroundPattern = BackgroundPattern.dots
+    var backgroundPattern = BackgroundPattern.off
     var inlineCalculation = InlineCalculationMode.plainText
     var highlightCurrentLine = true
     var showIndentGuides = true
     /// Every space and TAB, not only the ones in the selection.
     var showInvisibles = false
     /// On Save, before writing. Markdown and Diff keep theirs (a Markdown line break, a blank context line).
-    var trimTrailingWhitespaceOnSave = true
-    var ensureFinalNewline = true
+    var trimTrailingWhitespaceOnSave = false
+    var ensureFinalNewline = false
     /// A pasted or dropped picture inserts the text Vision reads in it.
     var recognizeTextInImages = true
+    var recognizeDocumentTables = false
+
+    static var supportsDocumentTables: Bool {
+        if #available(macOS 26, *) { return true }
+        return false
+    }
     /// A pasted curl command offers to send the request it describes.
     var recognizeCurlCommands = true
     /// JSON value marks after their lines (`JSONMarkOptions`).
@@ -86,9 +92,29 @@ struct EditorSettings: Equatable, Sendable {
     var jsonMarkColors = true
     var jsonMarkTimes = true
     var jsonMarkJWTExpiry = true
-    var jsonMarkDecodes = true
+    var jsonMarkDecodes = false
+
+    var highlightMatchingBrackets = true
+    var highlightSelectionOccurrences = true
+    var autoIndent = true
+    var smartBackspace = true
+    var continueMarkdownTasks = true
+    var suggestPasteDecodes = true
+    var suggestPasteLanguage = true
+    var suggestPasteCleanup = true
+    var suggestLanguageWhileTyping = false
 
     private enum Key {
+        static let highlightMatchingBrackets = "tinyedit.highlightMatchingBrackets"
+        static let highlightSelectionOccurrences = "tinyedit.highlightSelectionOccurrences"
+        static let autoIndent = "tinyedit.autoIndent"
+        static let smartBackspace = "tinyedit.smartBackspace"
+        static let continueMarkdownTasks = "tinyedit.continueMarkdownTasks"
+        static let suggestPasteDecodes = "tinyedit.suggestPasteDecodes"
+        static let suggestPasteLanguage = "tinyedit.suggestPasteLanguage"
+        static let suggestPasteCleanup = "tinyedit.suggestPasteCleanup"
+        static let suggestLanguageWhileTyping = "tinyedit.suggestLanguageWhileTyping"
+
         static let fontSize = "tinyedit.fontSize"
         static let tabWidth = "tinyedit.tabWidth"
         static let insertSpaces = "tinyedit.insertSpaces"
@@ -104,6 +130,7 @@ struct EditorSettings: Equatable, Sendable {
         static let showInvisibles = "tinyedit.showInvisibles"
         static let trimTrailingWhitespaceOnSave = "tinyedit.trimTrailingWhitespaceOnSave"
         static let ensureFinalNewline = "tinyedit.ensureFinalNewline"
+        static let recognizeDocumentTables = "tinyedit.recognizeDocumentTables"
         static let recognizeTextInImages = "tinyedit.recognizeTextInImages"
         static let recognizeCurlCommands = "tinyedit.recognizeCurlCommands"
         static let jsonMarkImages = "tinyedit.jsonMarkImages"
@@ -116,6 +143,16 @@ struct EditorSettings: Equatable, Sendable {
 
     static func load(from d: UserDefaults = .standard) -> EditorSettings {
         var s = EditorSettings()
+        if d.object(forKey: Key.highlightMatchingBrackets) != nil { s.highlightMatchingBrackets = d.bool(forKey: Key.highlightMatchingBrackets) }
+        if d.object(forKey: Key.highlightSelectionOccurrences) != nil { s.highlightSelectionOccurrences = d.bool(forKey: Key.highlightSelectionOccurrences) }
+        if d.object(forKey: Key.autoIndent) != nil { s.autoIndent = d.bool(forKey: Key.autoIndent) }
+        if d.object(forKey: Key.smartBackspace) != nil { s.smartBackspace = d.bool(forKey: Key.smartBackspace) }
+        if d.object(forKey: Key.continueMarkdownTasks) != nil { s.continueMarkdownTasks = d.bool(forKey: Key.continueMarkdownTasks) }
+        if d.object(forKey: Key.suggestPasteDecodes) != nil { s.suggestPasteDecodes = d.bool(forKey: Key.suggestPasteDecodes) }
+        if d.object(forKey: Key.suggestPasteLanguage) != nil { s.suggestPasteLanguage = d.bool(forKey: Key.suggestPasteLanguage) }
+        if d.object(forKey: Key.suggestPasteCleanup) != nil { s.suggestPasteCleanup = d.bool(forKey: Key.suggestPasteCleanup) }
+        if d.object(forKey: Key.suggestLanguageWhileTyping) != nil { s.suggestLanguageWhileTyping = d.bool(forKey: Key.suggestLanguageWhileTyping) }
+
         if d.object(forKey: Key.fontSize) != nil { s.fontSize = d.double(forKey: Key.fontSize) }
         if d.object(forKey: Key.tabWidth) != nil { s.tabWidth = d.integer(forKey: Key.tabWidth) }
         if d.object(forKey: Key.insertSpaces) != nil { s.insertSpaces = d.bool(forKey: Key.insertSpaces) }
@@ -157,10 +194,21 @@ struct EditorSettings: Equatable, Sendable {
         if let raw = d.string(forKey: Key.inlineCalculation), let mode = InlineCalculationMode(rawValue: raw) {
             s.inlineCalculation = mode
         }
+        s.recognizeDocumentTables = supportsDocumentTables && d.bool(forKey: Key.recognizeDocumentTables)
         return s.clamped()
     }
 
     func save(to d: UserDefaults = .standard) {
+        d.set(highlightMatchingBrackets, forKey: Key.highlightMatchingBrackets)
+        d.set(highlightSelectionOccurrences, forKey: Key.highlightSelectionOccurrences)
+        d.set(autoIndent, forKey: Key.autoIndent)
+        d.set(smartBackspace, forKey: Key.smartBackspace)
+        d.set(continueMarkdownTasks, forKey: Key.continueMarkdownTasks)
+        d.set(suggestPasteDecodes, forKey: Key.suggestPasteDecodes)
+        d.set(suggestPasteLanguage, forKey: Key.suggestPasteLanguage)
+        d.set(suggestPasteCleanup, forKey: Key.suggestPasteCleanup)
+        d.set(suggestLanguageWhileTyping, forKey: Key.suggestLanguageWhileTyping)
+
         d.set(fontSize, forKey: Key.fontSize)
         d.set(tabWidth, forKey: Key.tabWidth)
         d.set(insertSpaces, forKey: Key.insertSpaces)
@@ -172,6 +220,7 @@ struct EditorSettings: Equatable, Sendable {
         d.set(showInvisibles, forKey: Key.showInvisibles)
         d.set(trimTrailingWhitespaceOnSave, forKey: Key.trimTrailingWhitespaceOnSave)
         d.set(ensureFinalNewline, forKey: Key.ensureFinalNewline)
+        d.set(recognizeDocumentTables, forKey: Key.recognizeDocumentTables)
         d.set(recognizeTextInImages, forKey: Key.recognizeTextInImages)
         d.set(recognizeCurlCommands, forKey: Key.recognizeCurlCommands)
         d.set(jsonMarkImages, forKey: Key.jsonMarkImages)
@@ -190,6 +239,7 @@ struct EditorSettings: Equatable, Sendable {
 
     var decorationOptions: EditorDecorationOptions {
         EditorDecorationOptions(currentLine: highlightCurrentLine, indentGuides: showIndentGuides, invisibles: showInvisibles,
+                                matchingBrackets: highlightMatchingBrackets, selectionOccurrences: highlightSelectionOccurrences,
                                 jsonMarks: JSONMarkOptions(images: jsonMarkImages, links: jsonMarkLinks, colors: jsonMarkColors, times: jsonMarkTimes, jwtExpiry: jsonMarkJWTExpiry, decodes: jsonMarkDecodes))
     }
 
