@@ -5,6 +5,13 @@
 #   and the DMG's SHA-256 are appended here, so the notes file carries only the changes.
 #   --dry-run: everything except publishing; prints where the DMG and final notes are.
 #   --draft:   publishes a draft release, visible only to maintainers until published.
+# Signing and notarization read scripts/release.local.env (not committed), or the same variables
+# from the environment:
+#   DEVELOPER_ID_P12          the exported "Developer ID Application" certificate and key
+#   DEVELOPER_ID_P12_PASSWORD_ITEM  keychain generic-password service holding its password
+#                             (default TinyEdit-p12; add it with: security add-generic-password -s TinyEdit-p12 -a "$USER" -w)
+#   NOTARY_KEY, NOTARY_KEY_ID, NOTARY_ISSUER   an App Store Connect API key (.p8) for notarytool
+# A dry run signs but does not notarize.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 fail() { echo "$*" >&2; exit 1; }
@@ -28,10 +35,45 @@ if [ "$MODE" != --dry-run ]; then
   fi
 fi
 
-IDENTITY="${IDENTITY:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Apple Development:[^"]*\)".*/\1/p' | head -1)}"
-[ -n "$IDENTITY" ] || fail "no Apple Development identity in keychain"
-BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
+[ ! -f scripts/release.local.env ] || source scripts/release.local.env
+: "${DEVELOPER_ID_P12:?set DEVELOPER_ID_P12 (see the top of this script)}"
+: "${NOTARY_KEY:?set NOTARY_KEY}" "${NOTARY_KEY_ID:?set NOTARY_KEY_ID}" "${NOTARY_ISSUER:?set NOTARY_ISSUER}"
+# The secrets may sit in iCloud Drive, where an evicted file reads as "Resource deadlock avoided".
+materialize() {
+  [ -f "$1" ] || fail "missing $1"
+  brctl download "$1" >/dev/null 2>&1 || true
+  for _ in $(seq 30); do head -c1 "$1" >/dev/null 2>&1 && return; sleep 1; done
+  fail "could not read $1"
+}
+materialize "$DEVELOPER_ID_P12"
+materialize "$NOTARY_KEY"
+P12_PASSWORD="$(security find-generic-password -s "${DEVELOPER_ID_P12_PASSWORD_ITEM:-TinyEdit-p12}" -a "$USER" -w)" \
+  || fail "no keychain password item ${DEVELOPER_ID_P12_PASSWORD_ITEM:-TinyEdit-p12}"
+# The identity lives in a throwaway keychain that is never added to the search list.
 mkdir -p build
+KEYCHAIN="$PWD/build/release-signing.keychain-db"
+KEYCHAIN_PASSWORD="$(uuidgen)"
+trap 'security delete-keychain "$KEYCHAIN" 2>/dev/null || true' EXIT
+rm -f "$KEYCHAIN"
+security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+security import "$DEVELOPER_ID_P12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign >/dev/null || fail "could not import $DEVELOPER_ID_P12"
+security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+unset P12_PASSWORD
+IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | awk '/"Developer ID Application:/ {print $2; exit}')"
+[ -n "$IDENTITY" ] || fail "no Developer ID Application identity in $DEVELOPER_ID_P12"
+sign() { codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" --timestamp "$@"; }
+notarize() {
+  xcrun notarytool submit "$1" --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" \
+    --wait --timeout 30m --output-format json >build/notary.json 2>&1 || true
+  if ! grep -q '"status" *: *"Accepted"' build/notary.json; then
+    cat build/notary.json >&2
+    ID="$(sed -n 's/.*"id" *: *"\([^"]*\)".*/\1/p' build/notary.json | head -1)"
+    [ -z "$ID" ] || xcrun notarytool log "$ID" --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" >&2 || true
+    fail "notarization of $1 was not accepted"
+  fi
+}
+BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
 xcodegen generate >/dev/null
 
 echo "Testing…"
@@ -42,15 +84,27 @@ grep -E "Executed [0-9]+ tests" build/release-test.log | tail -1
 echo "Building $VERSION ($BUILD_NUMBER)…"
 rm -rf build/release
 xcodebuild -project TinyEdit.xcodeproj -scheme TinyEdit -configuration Release -derivedDataPath build/release \
-  CODE_SIGN_IDENTITY="$IDENTITY" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" build >build/release-build.log 2>&1 || {
+  CURRENT_PROJECT_VERSION="$BUILD_NUMBER" build >build/release-build.log 2>&1 || {
   tail -30 build/release-build.log; fail "build failed (build/release-build.log)"; }
 APP=build/release/Build/Products/Release/TinyEdit.app
-codesign --verify --strict "$APP"
+# Xcode signs ad hoc; the extension is signed before the app that contains it.
+sign --options runtime --entitlements TinyEditQuickLook/TinyEditQuickLook.entitlements "$APP/Contents/PlugIns/TinyEditQuickLook.appex"
+sign --options runtime --entitlements TinyEdit/TinyEdit.entitlements "$APP"
+codesign --verify --deep --strict "$APP"
 [ "$(lipo -archs "$APP/Contents/MacOS/TinyEdit")" = arm64 ] || fail "app is not arm64-only"
 [ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "$VERSION" ] || fail "Info.plist version is not $VERSION"
 # The signed entitlements must be exactly the checked-in ones (no injected get-task-allow).
 diff <(codesign -d --entitlements - --xml "$APP" 2>/dev/null | plutil -p - | sort) \
      <(plutil -p TinyEdit/TinyEdit.entitlements | sort) >/dev/null || fail "signed entitlements differ from TinyEdit.entitlements"
+
+if [ "$MODE" != --dry-run ]; then
+  echo "Notarizing the app…"
+  ditto -c -k --keepParent "$APP" build/notary-app.zip
+  notarize build/notary-app.zip
+  rm -f build/notary-app.zip
+  xcrun stapler staple "$APP" >/dev/null
+  spctl --assess --type execute "$APP" || fail "Gatekeeper rejects the app"
+fi
 
 echo "Packaging…"
 DIST=build/dist
@@ -77,8 +131,14 @@ hdiutil detach "$VOLUME" -quiet
 hdiutil convert "$DIST/rw.dmg" -format UDZO -imagekey zlib-level=9 -ov -o "$DMG" >/dev/null 2>&1
 [ -f "$DMG" ] || fail "DMG was not created"
 rm -rf "$DIST/stage" "$DIST/rw.dmg" "$DIST"/background-*.png
-codesign --sign "$IDENTITY" "$DMG"
+sign "$DMG"
 hdiutil verify "$DMG" >/dev/null 2>&1 || fail "DMG verification failed"
+if [ "$MODE" != --dry-run ]; then
+  echo "Notarizing the DMG…"
+  notarize "$DMG"
+  xcrun stapler staple "$DMG" >/dev/null
+  spctl --assess --type open --context context:primary-signature "$DMG" || fail "Gatekeeper rejects the DMG"
+fi
 SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
 
 FINAL="$DIST/notes-$VERSION.md"
@@ -90,9 +150,9 @@ FINAL="$DIST/notes-$VERSION.md"
 
 ### 安装 / Install
 
-需要 macOS 15 或更高版本、Apple 芯片（M 系列）Mac。下载 \`$(basename "$DMG")\`，打开后将 TinyEdit 拖到“应用程序”文件夹。本应用未经 Apple 公证，首次打开会被系统阻止：先打开一次，再到 **系统设置 ▸ 隐私与安全性** 点击 **仍要打开**；或在终端执行 \`xattr -dr com.apple.quarantine /Applications/TinyEdit.app\`。
+需要 macOS 15 或更高版本、Apple 芯片（M 系列）Mac。下载 \`$(basename "$DMG")\`，打开后将 TinyEdit 拖到“应用程序”文件夹。应用已使用 Developer ID 签名并经过 Apple 公证，可直接打开。
 
-Requires macOS 15 or later on an Apple silicon (M-series) Mac. Download \`$(basename "$DMG")\`, open it and drag TinyEdit into the Applications folder. The app is not notarized by Apple, so macOS blocks the first launch: open it once, then click **Open Anyway** in **System Settings ▸ Privacy & Security**, or run \`xattr -dr com.apple.quarantine /Applications/TinyEdit.app\` in Terminal.
+Requires macOS 15 or later on an Apple silicon (M-series) Mac. Download \`$(basename "$DMG")\`, open it and drag TinyEdit into the Applications folder. The app is signed with a Developer ID and notarized by Apple, so it opens normally.
 
 SHA-256 (\`$(basename "$DMG")\`):
 \`$SHA\`

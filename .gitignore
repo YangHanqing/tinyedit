@@ -19,3 +19,6 @@ AGENTS.local.md
 # Local icon design tooling
 /scripts/make_icons.sh
 /scripts/mask_icon.swift
+
+# Local release signing settings (paths to certificates and keys)
+/scripts/release.local.env
