@@ -18,9 +18,9 @@ settings:
   base:
     # Shared by the app and its Quick Look extension, which must carry the same version.
     # The patch number goes up with each feature.
-    MARKETING_VERSION: "0.3.0"
+    MARKETING_VERSION: "0.4.0"
     # yyyyMMddHHmm. scripts/install.sh stamps the minute it builds.
-    CURRENT_PROJECT_VERSION: "202611061200"
+    CURRENT_PROJECT_VERSION: "202611061640"
     SWIFT_VERSION: "5.0"
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_EMIT_LOC_STRINGS: YES
@@ -42,6 +42,13 @@ targets:
     platform: macOS
     sources:
       - path: TinyEdit
+        excludes: [CommandLine/tinyedit]
+      # The `tinyedit` command. Settings ▸ General shows the line that links /usr/local/bin/tinyedit to it.
+      - path: TinyEdit/CommandLine/tinyedit
+        buildPhase:
+          copyFiles:
+            destination: sharedSupport
+            subpath: bin
     dependencies:
       - target: TinyEditQuickLook
     settings:

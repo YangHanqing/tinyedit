@@ -74,6 +74,8 @@ final class AppState {
     @ObservationIgnored var monitors: [UUID: ExternalFileMonitor] = [:]
     @ObservationIgnored var savingIDs: Set<UUID> = []
     @ObservationIgnored var pendingURLs: [URL] = []
+    /// `tinyedit` request files (piped text, a line to go to) that arrived before the launch gate opened.
+    @ObservationIgnored var pendingRequestURLs: [URL] = []
     @ObservationIgnored var writtenGeneration: [UUID: UInt64] = [:]
     @ObservationIgnored var manifestSeq: UInt64 = 0
     @ObservationIgnored var flushTask: Task<Void, Never>?

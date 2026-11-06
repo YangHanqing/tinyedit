@@ -82,6 +82,7 @@ private struct GeneralSettingsPane: View {
             } footer: {
                 Text("A new language applies the next time TinyEdit opens.").settingsFootnote()
             }
+            CommandLineToolSection()
             Section {
                 LabeledContent("Version") {
                     Text(verbatim: "\(Self.bundleValue("CFBundleShortVersionString")) (\(Self.bundleValue("CFBundleVersion")))")

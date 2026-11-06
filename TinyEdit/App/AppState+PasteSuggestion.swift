@@ -108,7 +108,7 @@ extension AppState {
     /// Observed state is written only when the card appears or disappears. A cleanup offer for the
     /// pasted text comes first, then the offer to send a pasted curl command; otherwise a paste that filled
     /// the tab gets the language and decode offer, and any other paste the decode offer alone.
-    private func schedulePasteRecognition(_ store: BufferTextStore, pasted: NSRange?, fillsTab: Bool) {
+    func schedulePasteRecognition(_ store: BufferTextStore, pasted: NSRange?, fillsTab: Bool) {
         let id = store.id
         pasteTasks[id]?.cancel()
         pasteTasks[id] = nil

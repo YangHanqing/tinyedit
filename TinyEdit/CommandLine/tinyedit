@@ -1,0 +1,117 @@
+#!/bin/zsh -f
+# tinyedit: opens files, or the text piped into it, in TinyEdit.
+#
+# It lives inside TinyEdit.app (Contents/SharedSupport/bin) and is installed as a symlink to that copy, so it
+# finds its app through the link and follows its updates. A line to go to and piped text reach the app as
+# small request files in a spool folder, opened together with the files in one `open` event: that event
+# gives the sandboxed app access to each of them.
+
+setopt no_unset
+
+usage() {
+    cat <<'EOF'
+Usage: tinyedit [file[:line[:column]] ...]
+       command | tinyedit
+
+  tinyedit notes.md            Open a file in a tab (an empty one is created if it is missing)
+  tinyedit a.txt b.json        Open several files
+  tinyedit main.swift:120      Open a file at line 120 (main.swift:120:5 for a column)
+  curl -s URL | tinyedit       Open what a command prints in a new Untitled tab
+  tinyedit -                   Read the text from standard input
+  tinyedit                     Bring TinyEdit to the front
+
+Options:
+  -h, --help       Show this help
+  -v, --version    Show the version of TinyEdit
+  --               Treat every later argument as a file name
+EOF
+}
+
+fail() { print -r -u2 -- "tinyedit: $1"; }
+
+self=${0:A}
+app=${self%/Contents/SharedSupport/bin/*}
+if [[ $app == $self || $app != *.app || ! -d $app ]]; then
+    fail "can't find TinyEdit.app around $self"
+    exit 1
+fi
+
+typeset -a files requests
+read_stdin=0 only_files=0 named=0 result=0
+
+spool=${TMPDIR:-/tmp}
+spool=${spool%/}/TinyEdit-cli
+spool_ready() {
+    [[ -d $spool ]] || { /bin/mkdir -p -m 700 -- "$spool" || return 1 }
+    # Requests the app never opened (it was busy, or the open failed) are dropped after a day.
+    /usr/bin/find "$spool" -type f -mtime +1 -delete 2>/dev/null
+    return 0
+}
+request_path() { print -r -- "$spool/$(/usr/bin/uuidgen).$1"; }
+
+for arg in "$@"; do
+    if (( ! only_files )); then
+        case $arg in
+            --) only_files=1; continue ;;
+            -h|--help) usage; exit 0 ;;
+            -v|--version)
+                print -r -- "TinyEdit $(/usr/bin/defaults read "$app/Contents/Info" CFBundleShortVersionString 2>/dev/null)"
+                exit 0 ;;
+            -) read_stdin=1; continue ;;
+            -?*) fail "unknown option $arg"; usage >&2; exit 2 ;;
+        esac
+    fi
+    named=1
+    file=$arg position=
+    # file:120 or file:120:5, unless a file has that very name. With two numbers, file:120:5 wins over a
+    # file named "file:120" unless only that one exists.
+    if [[ ! -e $file ]]; then
+        if [[ $file =~ '^(.+):([0-9]+):([0-9]+)$' ]] && [[ -e $match[1] || ! -e $match[1]:$match[2] ]]; then
+            file=$match[1] position=$match[2]:$match[3]
+        elif [[ $file =~ '^(.+):([0-9]+)$' ]]; then
+            file=$match[1] position=$match[2]
+        fi
+    fi
+    if [[ -d $file ]]; then
+        fail "$file is a folder"; result=1; continue
+    fi
+    if [[ ! -e $file ]]; then
+        if [[ ! -d ${file:h} ]]; then
+            fail "${file:h}: no such folder"; result=1; continue
+        fi
+        if ! : >> "$file" 2>/dev/null; then
+            fail "can't create $file"; result=1; continue
+        fi
+    fi
+    file=${file:a}
+    files+=$file
+    if [[ -n $position ]]; then
+        spool_ready || { fail "can't write to $spool"; exit 1 }
+        request=$(request_path tinyedit-goto)
+        print -rn -- "$position"$'\n'"$file" > "$request" || exit 1
+        requests+=$request
+    fi
+done
+
+# Standard input is read for `-`, or when nothing was named and it is not a terminal.
+if (( read_stdin )) || { (( ! named )) && [[ ! -t 0 ]] }; then
+    spool_ready || { fail "can't write to $spool"; exit 1 }
+    request=$(request_path tinyedit-stdin)
+    /bin/cat > "$request" || { /bin/rm -f -- "$request"; exit 1 }
+    if [[ -s $request ]]; then
+        requests+=$request
+    else
+        /bin/rm -f -- "$request"
+    fi
+fi
+
+if (( named && ${#files} == 0 && ${#requests} == 0 )); then
+    exit $result
+fi
+if [[ -n ${TINYEDIT_DRY_RUN:-} ]]; then
+    print -r -- open -a "$app" "${files[@]}" "${requests[@]}"
+    for request in "${requests[@]}"; do print -r -- "== ${request:t}"; /bin/cat -- "$request"; print; /bin/rm -f -- "$request"; done
+    exit $result
+fi
+/usr/bin/open -a "$app" "${files[@]}" "${requests[@]}" || exit 1
+exit $result

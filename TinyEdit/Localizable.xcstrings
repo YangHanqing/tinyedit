@@ -27740,6 +27740,370 @@
           }
         }
       }
+    },
+    "Command Line Tool": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Command Line Tool"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命令行工具"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命令列工具"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コマンドラインツール"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령줄 도구"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Befehlszeilenwerkzeug"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Outil en ligne de commande"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Herramienta de línea de comandos"
+          }
+        }
+      }
+    },
+    "To install it, run in Terminal:": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To install it, run in Terminal:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在“终端”中运行以下命令即可安装："
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在「終端機」中執行以下指令即可安裝："
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストールするには、ターミナルで次を実行します："
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치하려면 터미널에서 다음을 실행하세요:"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Installieren im Terminal ausführen:"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pour l’installer, exécutez dans Terminal :"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para instalarla, ejecuta en Terminal:"
+          }
+        }
+      }
+    },
+    "To remove it, run in Terminal:": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To remove it, run in Terminal:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在“终端”中运行以下命令即可移除："
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在「終端機」中執行以下指令即可移除："
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除するには、ターミナルで次を実行します："
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제거하려면 터미널에서 다음을 실행하세요:"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Entfernen im Terminal ausführen:"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pour la supprimer, exécutez dans Terminal :"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para quitarla, ejecuta en Terminal:"
+          }
+        }
+      }
+    },
+    "Installed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已安装"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已安裝"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール済み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치됨"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installiert"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installé"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalada"
+          }
+        }
+      }
+    },
+    "Not installed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not installed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未安装"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未安裝"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未インストール"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치되지 않음"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht installiert"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non installé"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No instalada"
+          }
+        }
+      }
+    },
+    "Points to another copy": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Points to another copy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "指向了另一个副本"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "指向了另一個副本"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別のコピーを指しています"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다른 사본을 가리킴"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verweist auf eine andere Kopie"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pointe vers une autre copie"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apunta a otra copia"
+          }
+        }
+      }
+    },
+    "Then `tinyedit notes.md` opens a file, `tinyedit main.swift:120` opens it at a line, and `command | tinyedit` opens what a command prints in a new tab. Run `tinyedit -h` for more. The command follows TinyEdit’s updates.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Then `tinyedit notes.md` opens a file, `tinyedit main.swift:120` opens it at a line, and `command | tinyedit` opens what a command prints in a new tab. Run `tinyedit -h` for more. The command follows TinyEdit’s updates."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装后，`tinyedit notes.md` 打开文件，`tinyedit main.swift:120` 打开文件并跳到该行，`命令 | tinyedit` 把命令的输出放进新标签页。运行 `tinyedit -h` 查看更多用法。TinyEdit 更新后，命令也会随之更新。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安裝後，`tinyedit notes.md` 開啟檔案，`tinyedit main.swift:120` 開啟檔案並跳到該行，`指令 | tinyedit` 把指令的輸出放進新分頁。執行 `tinyedit -h` 查看更多用法。TinyEdit 更新後，指令也會隨之更新。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール後、`tinyedit notes.md` でファイルを開き、`tinyedit main.swift:120` でその行を開き、`コマンド | tinyedit` でコマンドの出力を新しいタブに開きます。詳しくは `tinyedit -h` を実行してください。コマンドは TinyEdit のアップデートに追従します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치 후 `tinyedit notes.md`는 파일을 열고, `tinyedit main.swift:120`은 해당 줄에서 열며, `명령 | tinyedit`은 명령의 출력을 새 탭에 엽니다. 자세한 내용은 `tinyedit -h`를 실행하세요. 명령은 TinyEdit 업데이트를 따라갑니다."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Danach öffnet `tinyedit notes.md` eine Datei, `tinyedit main.swift:120` öffnet sie in einer Zeile und `befehl | tinyedit` öffnet die Ausgabe eines Befehls in einem neuen Tab. Mehr mit `tinyedit -h`. Der Befehl folgt den Updates von TinyEdit."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ensuite, `tinyedit notes.md` ouvre un fichier, `tinyedit main.swift:120` l’ouvre à une ligne et `commande | tinyedit` ouvre la sortie d’une commande dans un nouvel onglet. Exécutez `tinyedit -h` pour en savoir plus. La commande suit les mises à jour de TinyEdit."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Después, `tinyedit notes.md` abre un archivo, `tinyedit main.swift:120` lo abre en una línea y `comando | tinyedit` abre lo que imprime un comando en una pestaña nueva. Ejecuta `tinyedit -h` para ver más. El comando se actualiza con TinyEdit."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

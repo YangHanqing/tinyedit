@@ -50,6 +50,8 @@ extension AppState {
     }
 
     func openURLsAsync(_ urls: [URL]) async {
+        let requests = urls.filter(CommandLineTool.isRequest)
+        let urls = urls.filter { !CommandLineTool.isRequest($0) }
         showWindow() // the red button may have hidden it; the tab and any error toast must be seen
         flushImmediately() // a large read or a failed open must not sit inside another buffer's debounce window
         var firstNew: UUID?
@@ -102,6 +104,7 @@ extension AppState {
             }
         }
         if let target = firstNew ?? existing { selectTab(target) }
+        await runCommandLineRequests(requests)
         if skippedFolder { showToast(String(localized: "Folders can't be opened")) }
         if overLimit > 0 {
             showToast(opened == 0 ? Self.tabLimitMessage

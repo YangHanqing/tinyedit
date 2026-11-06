@@ -182,7 +182,9 @@ extension AppState {
         pendingURLs = []
         if !queued.isEmpty { await openURLsAsync(queued) }
 
-        if session.tabOrder.isEmpty {
+        // Piped text opened at launch is the first tab, after the gate opens.
+        let pipedPending = pendingRequestURLs.contains { $0.pathExtension == CommandLineTool.pipeExtension }
+        if session.tabOrder.isEmpty && !pipedPending {
             let buffer = EditorBuffer(title: "Untitled")
             makeStore(for: buffer, text: "")
             session.buffers[buffer.id] = buffer
@@ -195,6 +197,8 @@ extension AppState {
         if !plan.tombstonedFilesToDelete.isEmpty { await recoveryActor.deleteTombstoned(plan.tombstonedFilesToDelete) }
         flushImmediately()
         activeBufferChanged()
+        await runPendingCommandLineRequests()
+        if session.tabOrder.isEmpty { newTab() }
         DispatchQueue.main.async { [host] in host.focus() }
     }
 

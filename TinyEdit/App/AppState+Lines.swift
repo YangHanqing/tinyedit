@@ -67,26 +67,31 @@ extension AppState {
     @discardableResult
     func goToLine(_ input: String) -> Bool {
         guard let target = LineEditing.parseLineTarget(input), let store = activeStore else { return false }
+        let caret = caretOffset(line: target.line, column: target.column, in: store)
+        host.textView.setSelectedRange(NSRange(location: caret, length: 0))
+        host.reveal(offset: caret)
+        return true
+    }
+
+    /// The offset of `line` and `column` (1-based, clamped to the text and to the line) in the store's text.
+    func caretOffset(line: Int, column: Int?, in store: BufferTextStore) -> Int {
         let ns = store.textStorage.mutableString
         var start = 0
         if let index = store.lineIndex, index.generation == store.generation {
-            start = index.starts[min(target.line, index.lineCount) - 1]
+            start = index.starts[min(line, index.lineCount) - 1]
         } else {
-            var line = 1
-            while line < target.line, start < ns.length {
+            var current = 1
+            while current < line, start < ns.length {
                 let next = NSMaxRange(ns.lineRange(for: NSRange(location: start, length: 0)))
                 if next == start || (next == ns.length && ns.character(at: next - 1) != 0x0A) { break }
                 start = next
-                line += 1
+                current += 1
             }
         }
         let full = ns.lineRange(for: NSRange(location: start, length: 0))
         var end = NSMaxRange(full)
         if end > full.location, ns.character(at: end - 1) == 0x0A { end -= 1 }
-        let caret = min(start + (target.column ?? 1) - 1, end)
-        host.textView.setSelectedRange(NSRange(location: caret, length: 0))
-        host.reveal(offset: caret)
-        return true
+        return min(start + (column ?? 1) - 1, end)
     }
 
     // MARK: Task counts

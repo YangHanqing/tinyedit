@@ -18,6 +18,7 @@ All screenshots use the English interface and dark theme. The interface language
 | --- | --- | --- |
 | Everyday editing | Tabs, find and replace, word wrap, line numbers, indent guides, matching brackets and selected-word highlighting. Duplicate, move, delete and join lines, or toggle comments. |  |
 | Files and encodings | UTF-8, UTF-16 and GB18030 (including GBK / GB2312), with line endings preserved. External file changes and deletions prompt you to choose what to do; reloaded changes are marked beside the line numbers. |  |
+| Command line | Run `tinyedit file` in Terminal to open a file, `tinyedit file:120` to open it at line 120, and `command \| tinyedit` to open what a command prints in a new tab. See [Command line](#command-line) below to install it. |  |
 | Session recovery | Tabs, unsaved text, cursor and scroll position are kept automatically. Recovery data is separate from your files; files change only when you save them. |  |
 | Text from images | Paste a screenshot or drop a picture to insert its text. Recognition uses Apple Vision on your Mac. On macOS 26, tables can become text ready to paste into a spreadsheet. |  |
 | Appearance and languages | Light, dark or system appearance, four app icons (Notepad, Code Editor, Manuscript and Minimal Cursor) and multiple editor backgrounds. Available in English, Simplified Chinese, Traditional Chinese, Japanese, Korean, German, French and Spanish. |  |
@@ -50,6 +51,20 @@ Download the latest version from [Releases](../../releases) and drag TinyEdit in
 - macOS 15 or later.
 - Apple silicon (M-series) Mac. Intel Macs are not supported yet.
 - Files up to 64 MB. Above 2 MB, only visible text is highlighted; above 5 MB, highlighting and Markdown preview are disabled.
+
+## Command line
+
+TinyEdit comes with a `tinyedit` command. In Settings ▸ General ▸ Command Line Tool, click Copy and run the install line in Terminal (it asks for an administrator password). The command links to the script inside the app, so it stays current when TinyEdit updates.
+
+```sh
+tinyedit notes.md             # open a file; a missing one is created empty first
+tinyedit a.txt b.json         # open several files, one tab each
+tinyedit main.swift:120       # open at line 120 (main.swift:120:5 for a column too)
+curl -s https://api.example.com/items | tinyedit   # open what a command prints in a new Untitled tab
+pbpaste | tinyedit            # piped text gets the paste offers: language, Format JSON, escape-code cleanup
+tinyedit                      # bring TinyEdit to the front
+tinyedit -h                   # show every option
+```
 
 ## Privacy and network access
 
