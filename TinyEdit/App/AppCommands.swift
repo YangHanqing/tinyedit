@@ -6,6 +6,9 @@ struct AppCommands: Commands {
     private var workspaces: Workspaces { Workspaces.shared }
 
     var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About TinyEdit") { Self.showAboutPanel() }
+        }
         CommandGroup(replacing: .newItem) {
             // ⌘T does the same through AppDelegate, without a second menu item.
             Button("New Tab") { appState.newTabInWindow() }
@@ -136,5 +139,23 @@ struct AppCommands: Commands {
                 }
             }
         }
+    }
+}
+
+extension AppCommands {
+    static let projectURL = URL(string: "https://github.com/YangHanqing/tinyedit")!
+
+    /// The standard About panel, with the project page as a link in the credits, so a downloaded copy
+    /// says where it comes from and where newer versions are.
+    @MainActor static func showAboutPanel() {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        let credits = NSAttributedString(string: projectURL.absoluteString, attributes: [
+            .link: projectURL,
+            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+            .paragraphStyle: paragraph,
+        ])
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
     }
 }
