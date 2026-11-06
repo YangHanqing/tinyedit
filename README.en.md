@@ -2,75 +2,84 @@
 
 [简体中文](README.md) | **English**
 
-TinyEdit is a **native macOS text editor** for reading and editing everyday files such as TXT, Markdown (MD) and JSON. Its clean, modern SwiftUI interface keeps the app lightweight while providing a complete set of everyday editing tools.
+TinyEdit is a **native macOS text editor** for everyday reading and editing of TXT, Markdown, JSON and other text files.
 
-TinyEdit has no project management or other IDE features; the sidebar only browses folders. Open a file to read and edit it, or start typing without creating a file first. Tabs and unsaved text are kept automatically, so you can pick up where you left off after closing the window or quitting.
+Open a file to edit it, or start typing without creating a file first. Tabs and unsaved text are kept automatically, ready for the next launch. Built-in tools cover JSON, text recognition from images, arithmetic and translation, with a sidebar for browsing local folders.
 
 ![TinyEdit overview](assets/screenshots/overview.png)
-
-## Features
-
-All screenshots use the English interface and dark theme. The interface language can be changed in Settings.
-
-### General features
-
-| Feature | Description | Image |
-| --- | --- | --- |
-| Everyday editing | Tabs, find and replace, word wrap, line numbers, indent guides, matching brackets and selected-word highlighting. Duplicate, move, delete and join lines, or toggle comments. Compare a tab with another tab or a file on disk (right-click a tab ▸ Compare With). |  |
-| Files and encodings | UTF-8, UTF-16 and GB18030 (including GBK / GB2312), with line endings preserved. External file changes and deletions prompt you to choose what to do; reloaded changes are marked beside the line numbers. |  |
-| Folders and windows | Open or drop a folder and it opens in a new window, its files listed in the sidebar; click one to open it. Changes on disk show up by themselves. The sidebar button appears on the right of the title bar only in folder windows. Drag the sidebar edge to resize it; deep trees scroll horizontally. Moved or renamed folders are followed automatically, and deleting a folder keeps open text intact. ⇧⌘N opens a new window, ⌃⌘S shows or hides the sidebar. Drag a tab out of a window to make it a window of its own, or onto another window to move it there. Each window's tabs, folders and position come back when you reopen TinyEdit. |  |
-| Command line | Run `tinyedit file` in Terminal to open a file, `tinyedit file:120` to open it at line 120, and `command \| tinyedit` to open what a command prints in a new tab. See [Command line](#command-line) below to install it. |  |
-| Session recovery | Tabs, unsaved text, cursor and scroll position are kept automatically. Recovery data is separate from your files; files change only when you save them. |  |
-| Text from images | Paste a screenshot or drop a picture to insert its text. Recognition uses Apple Vision on your Mac. On macOS 26, tables can become text ready to paste into a spreadsheet. |  |
-| Appearance and languages | Light, dark or system appearance, four app icons (Notepad, Code Editor, Manuscript and Minimal Cursor) and multiple editor backgrounds. Available in English, Simplified Chinese, Traditional Chinese, Japanese, Korean, German, French and Spanish. |  |
-| Syntax highlighting | 36 languages and formats, including JSON, Markdown, Python, JavaScript, TypeScript, Swift, SQL and YAML. Detected from files and content automatically, or selected manually from the status bar. | <img src="assets/screenshots/syntax-highlighting.png" alt="Syntax highlighting" width="560"> |
-| Command palette | Press ⇧⌘P to find and run commands or switch to an open tab. Available commands include:<br>• JSON: format, minify, escape and unescape strings.<br>• Encoding: Base64/URL encode and decode, unescape Unicode, decode JWTs, convert Unix timestamps to dates.<br>• Lines: sort ascending/descending, reverse, shuffle and remove duplicates.<br>• Cleanup: remove blank lines, trailing whitespace, ANSI escape codes (such as terminal colors) and invisible characters.<br>• Translation and requests: translate a selection or document, and send curl requests.<br>Text tools work on the selection, or the whole document when nothing is selected. Text changes can be undone. | <img src="assets/screenshots/command-palette.png" alt="Command palette" width="560"> |
-| Arithmetic as you type | Type an expression to see the result at the end of the line, then press Tab to insert it. Supports arithmetic, parentheses, powers `2^10`, roots `sqrt(144)`, percent, remainder, factorial, `max`/`min`/`avg`, rounding, logarithms, trigonometry and full-width operators. Exact results use decimal arithmetic, so `0.1 + 0.2` gives `0.3`. Enabled for plain text by default, with an option to include Markdown. | <img src="assets/screenshots/calculator.png" alt="Inline arithmetic" width="560"> |
-| Send curl requests | Paste a curl command, review the request and click Send. The response card shows status, time, size, body and headers, with JSON formatted automatically. Copy the result, replace the command or open it in a new tab. No terminal needed, and nothing is sent until you choose Send. | <img src="assets/screenshots/curl-request.png" alt="curl request and response" width="560"> |
-| Translation | Translate a selection or a whole document with the original and translation side by side. Copy the result, replace the original or open it in a new tab. Use Apple Translation or an OpenAI-compatible hosted service or local model. Long documents are split into segments, and interrupted translations can continue. | <img src="assets/screenshots/translation.png" alt="Translation panel" width="560"> |
-| Recognize pasted content | Paste Base64 to see its decoded text, ready to copy or replace. Also recognizes JWTs, URL encoding, Unicode escapes, JSON strings and Unix timestamps. Pasted terminal color codes and invisible characters get a cleanup suggestion. | <img src="assets/screenshots/paste-base64.png" alt="Automatic Base64 paste decoding" width="560"> |
-
-### Markdown
-
-| Feature | Description | Image |
-| --- | --- | --- |
-| Markdown preview | Press ⇧⌘V to read source and preview side by side, or have Markdown open in preview by default. Supports headings, lists, quotes, tables, code blocks and images, including images inside tables. HTML `<img>` sizing and `<br>` line breaks are supported. | <img src="assets/screenshots/markdown-tasks.png" alt="Markdown preview and tasks" width="560"> |
-| Tasks | Write tasks with `- [ ]`, then click a preview checkbox or press ⌘↩ to toggle completion. The status bar tracks progress, and Return continues the list while editing. |  |
-
-### JSON
-
-| Feature | Description | Image |
-| --- | --- | --- |
-| Paste and format JSON | Paste JSON into an empty tab, or replace the whole document, to get a syntax and formatting suggestion. Format it in one click while preserving key order and numbers as written. Minify, escape and unescape tools are also available. | <img src="assets/screenshots/json-format.png" alt="JSON paste and formatting suggestion" width="560"> |
-| Copy values and preview content | Place the cursor on a key or value to copy its path, key or value from the status bar. Strings are copied without quotes and with escapes resolved. Lines with image links or embedded images show a picture icon; click it to preview the image, see its dimensions and size, or copy and save it. Object key counts and array item counts follow the cursor in the status bar. Inline annotations show dates for timestamps and color swatches, with actions to open links or decode content. | <img src="assets/screenshots/json-values.png" alt="JSON value actions and image preview" width="560"> |
-| Open Value: read a value separately | Place the cursor on an object, array or ordinary string, then click **Open Value** in the status bar to view and edit it in a new tab. Useful for long values and nested data. Strings are unescaped, and JSON objects or arrays stored inside strings are formatted automatically. | <img src="assets/screenshots/json-open-value.png" alt="Open Value in the JSON status bar" width="560"> |
 
 ## Download and install
 
 Download the latest version from [Releases](../../releases) and drag TinyEdit into Applications.
 
-- macOS 14 or later (Apple Translation needs macOS 15).
-- Apple silicon (M-series) or Intel Mac.
+- macOS 14 or later, on Apple silicon or Intel Mac.
+- Apple Translation requires macOS 15; table recognition in images requires macOS 26.
 - Files up to 64 MB. Above 2 MB, only visible text is highlighted; above 5 MB, highlighting and Markdown preview are disabled.
+
+## Features
+
+Screenshots use the English interface and dark theme. Both language and appearance can be changed in Settings.
+
+### Text tools
+
+| Feature | Description | Image |
+| --- | --- | --- |
+| Recognize pasted content | Paste Base64, JWTs, URL encoding, Unicode escapes or JSON strings to preview decoded text, then copy it or replace the original. Unix timestamp conversion is also supported. Terminal color codes and invisible characters prompt a cleanup suggestion. | <img src="assets/screenshots/paste-base64.png" alt="Automatic Base64 paste decoding" width="560"> |
+| Text from images | Paste a screenshot or drop a picture to insert its text. Recognition runs locally. On macOS 26, optional table recognition produces tab-separated text ready to paste into a spreadsheet. |  |
+| Arithmetic as you type | Type an expression to see the result at the end of the line, then press Tab to insert it. Supports arithmetic, powers, roots, percentages and more; `0.1 + 0.2` gives exactly `0.3`. Select several numbers to see their sum in the status bar and click to copy it. | <img src="assets/screenshots/calculator.png" alt="Inline arithmetic" width="560"> |
+| Translation | Read the original and translation side by side, for a selection or a whole document. Use Apple Translation or an OpenAI-compatible hosted service or local model. Long texts are split into segments, and interrupted translations can continue. Copy the result, replace the original or open it in a new tab. | <img src="assets/screenshots/translation.png" alt="Translation panel" width="560"> |
+| Send curl requests | Paste a curl command, review the request and click Send. The response card shows status, time, body and headers, with JSON formatted automatically. Copy the result, replace the command or open it in a new tab. | <img src="assets/screenshots/curl-request.png" alt="curl request and response" width="560"> |
+| Text comparison | Compare two tabs, or a tab with a file on disk, and navigate between changes. Differences in encoding, line endings and the final newline are shown separately. Available from a tab's context menu or the command palette. |  |
+| Command palette | Press ⇧⌘P to find commands or switch tabs. Tools include JSON operations, encoding and decoding, line sorting and deduplication, and text cleanup. The palette suggests actions for the current content and dims commands that do not apply. Text tools use the selection, or the whole document when nothing is selected; changes can be undone. | <img src="assets/screenshots/command-palette.png" alt="Command palette" width="560"> |
+
+### JSON
+
+| Feature | Description | Image |
+| --- | --- | --- |
+| Paste and format | Paste JSON into an empty tab, or replace the whole document, to get a syntax and formatting suggestion. Formatting preserves key order and numbers as written. Minify, escape and unescape tools are also available. | <img src="assets/screenshots/json-format.png" alt="JSON paste and formatting suggestion" width="560"> |
+| Copy values and preview images | Place the cursor on a key or value to copy its path, key or value and see object key counts or array item counts. Copied strings are unescaped. Image links and embedded images can be previewed, copied or saved. | <img src="assets/screenshots/json-values.png" alt="JSON value actions and image preview" width="560"> |
+| Inline annotations and link tools | See dates for timestamps, color swatches and JWT expiry status at the end of a line. Open links, decode content or expand URL query parameters into JSON. |  |
+| Open Value | Open an object, array or ordinary string in a new tab to read longer values separately. Strings are unescaped, and JSON objects or arrays stored inside them are formatted automatically. | <img src="assets/screenshots/json-open-value.png" alt="Open Value in the JSON status bar" width="560"> |
+
+### Markdown
+
+| Feature | Description | Image |
+| --- | --- | --- |
+| Side-by-side preview | Press ⇧⌘V to read source and preview side by side, or enable preview by default. Supports headings, lists, quotes, tables, code blocks and images, including images inside tables and HTML `<img>` sizing. | <img src="assets/screenshots/markdown-tasks.png" alt="Markdown preview and tasks" width="560"> |
+| Tasks | Write tasks with `- [ ]`, then click a preview checkbox or press ⌘↩ to toggle completion. The status bar tracks progress, and Return continues the list. |  |
+
+### Editing and files
+
+| Feature | Description | Image |
+| --- | --- | --- |
+| Everyday editing | Tabs, find and replace, word wrap, line numbers, indent guides, matching brackets and selected-word highlighting. Duplicate, move, delete and join lines, or toggle comments. |  |
+| Syntax highlighting | 36 languages and formats, including JSON, Markdown, Python, JavaScript, TypeScript, Swift, SQL and YAML, with automatic detection and manual selection. | <img src="assets/screenshots/syntax-highlighting.png" alt="Syntax highlighting" width="560"> |
+| Session recovery | Tabs, unsaved text, cursor and scroll position are kept automatically. Recovery data is separate from your files; files change only when you save them. |  |
+| Files and encodings | UTF-8, UTF-16 and GB18030 (including GBK / GB2312), with line endings preserved. External file changes and deletions prompt you to choose what to do; reloaded changes are marked beside the line numbers. |  |
+| Folders and windows | Folders open in separate windows, with a sidebar that updates as files change on disk. Drag tabs out to create windows or move them between windows. Each window's tabs, folders and position are restored at the next launch. |  |
+| Finder preview | Select a file in Finder and press Space to preview rendered Markdown or highlighted JSON and code. Single-line JSON is formatted automatically. Markdown images appear as alt text. |  |
+| Appearance and languages | Light, dark or system appearance, multiple app icons and editor backgrounds, and eight interface languages, including English, Simplified and Traditional Chinese, and Japanese. |  |
 
 ## Command line
 
-TinyEdit comes with a `tinyedit` command. In Settings ▸ General ▸ Command Line Tool, click Copy and run the install line in Terminal (it asks for an administrator password). The command links to the script inside the app, so it stays current when TinyEdit updates.
+The bundled `tinyedit` command opens files and folders, jumps to a line or reads piped text.
+
+In Settings ▸ General ▸ Command Line Tool, click Copy and run the install command in Terminal (an administrator password is required). The command stays current when TinyEdit updates, with no need to reinstall it.
 
 ```sh
-tinyedit notes.md             # open a file; a missing one is created empty first
-tinyedit a.txt b.json         # open several files, one tab each
+tinyedit notes.md             # open a file; create it empty if it does not exist
 tinyedit .                    # open the current folder in a new window
-tinyedit main.swift:120       # open at line 120 (main.swift:120:5 for a column too)
-curl -s https://api.example.com/items | tinyedit   # open what a command prints in a new Untitled tab
-pbpaste | tinyedit            # piped text gets the paste offers: language, Format JSON, escape-code cleanup
-tinyedit                      # bring TinyEdit to the front
-tinyedit -h                   # show every option
+tinyedit main.swift:120       # jump to line 120; main.swift:120:5 also specifies a column
+curl -s https://api.example.com/items | tinyedit   # view command output in a new tab
 ```
+
+Piped text also supports language detection, JSON formatting and terminal color code cleanup. Run `tinyedit -h` for all options.
 
 ## Privacy and network access
 
-TinyEdit collects no user data. Editing, text recognition, text tools and session recovery stay on your Mac. Apple Translation runs locally; the first use of a language may require a language pack download.
+TinyEdit collects no user data. Editing, text recognition, text tools and session recovery run locally. Apple Translation runs on your Mac; the first use of a language may require a language pack download.
+
+Custom-model translation sends the text to the configured service, or to a local service when using a local model. curl requests are sent when you click Send. Remote images are downloaded when you choose to load them.
 
 ## Build from source
 

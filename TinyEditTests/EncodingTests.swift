@@ -31,6 +31,13 @@ final class EncodingTests: XCTestCase {
         XCTAssertThrowsError(try TextEncoding.decode(Data([0xD6, 0xD0, 0x00, 0xCE, 0xC4])))
     }
 
+    func testGB18030RejectsBytesThatWouldNotSaveBackUnchanged() {
+        // Windows-1252 "Price €1": 0x80 reads as € but is written back as A2 E3, so a save would change the file.
+        let bytes = Data("Price ".utf8) + Data([0x80]) + Data("1".utf8)
+        XCTAssertThrowsError(try TextEncoding.decode(bytes))
+        XCTAssertThrowsError(try TextEncoding.decode(bytes, as: .gb18030))
+    }
+
     func testUTF8BytesStayUTF8EvenThoughGB18030CouldReadThem() throws {
         XCTAssertEqual(try TextEncoding.decode(Data("你好".utf8)).encoding, .utf8)
         XCTAssertEqual(try TextEncoding.decode(Data("你好".utf8), as: .gb18030).encoding, .gb18030)

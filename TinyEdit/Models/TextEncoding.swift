@@ -51,8 +51,16 @@ enum TextEncoding: String, Codable, Sendable, CaseIterable {
             return (s, .utf16BE)
         }
         if let s = String(data: data, encoding: .utf8) { return (s, .utf8) }
-        guard let s = String(data: data, encoding: gb18030Encoding), !s.utf8.contains(0) else { throw DecodeError() }
+        guard let s = decodeGB18030(data), !s.utf8.contains(0) else { throw DecodeError() }
         return (s, .gb18030)
+    }
+
+    /// GB18030 text only when it encodes back to the same bytes. Some bytes decode but do not round-trip
+    /// (a lone 0x80, Windows-1252's euro sign, reads as € and is written back as A2 E3), so saving such a
+    /// file, even unedited, would change bytes the user never touched. Those files are not opened.
+    private static func decodeGB18030(_ data: Data) -> String? {
+        guard let s = String(data: data, encoding: gb18030Encoding), s.data(using: gb18030Encoding) == data else { return nil }
+        return s
     }
 
     /// Decodes as the encoding the user picked. A UTF-8 BOM is a fact of the bytes, so either UTF-8
@@ -67,7 +75,7 @@ enum TextEncoding: String, Codable, Sendable, CaseIterable {
             guard let s = String(data: data, encoding: .utf8) else { throw DecodeError() }
             return (s, .utf8)
         case .gb18030:
-            guard let s = String(data: data, encoding: gb18030Encoding) else { throw DecodeError() }
+            guard let s = decodeGB18030(data) else { throw DecodeError() }
             return (s, .gb18030)
         case .utf16LE, .utf16BE:
             let result = try decode(data)
