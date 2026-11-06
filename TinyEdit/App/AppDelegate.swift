@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         EndToEnd.run()
         #endif
-        // ⌘N opens a tab like ⌘T (New Window is ⇧⌘N). SwiftUI menus cannot hold a hidden second shortcut.
+        // ⌘T opens a tab like ⌘N (New Window is ⇧⌘N). SwiftUI menus cannot hold a hidden second shortcut.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let handled = MainActor.assumeIsolated { () -> Bool in

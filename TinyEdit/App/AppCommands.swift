@@ -7,7 +7,7 @@ struct AppCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            // ⌘N does the same through AppDelegate, without a second menu item.
+            // ⌘T does the same through AppDelegate, without a second menu item.
             Button("New Tab") { appState.newTabInWindow() }
                 .keyboardShortcut(AppShortcut.newTab)
             Button("New Window") { workspaces.newWindow() }

@@ -143,7 +143,7 @@ extension AppState {
         window?.makeKeyAndOrderFront(nil)
     }
 
-    /// `⌘T` and `⌘N`: a tab in this window, shown again if the red button hid it.
+    /// `⌘N` and `⌘T`: a tab in this window, shown again if the red button hid it.
     func newTabInWindow() {
         showWindow()
         newTab()

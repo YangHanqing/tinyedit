@@ -3,9 +3,10 @@ import SwiftUI
 /// The menu key equivalents. `AppCommands` binds them and the Shortcuts settings pane lists them,
 /// so the two cannot disagree.
 enum AppShortcut {
-    static let newTab = KeyboardShortcut("t", modifiers: .command)
-    /// Not a menu item: AppDelegate's key monitor.
-    static let newTabAlternate = KeyboardShortcut("n", modifiers: .command)
+    /// ⌘N, as in Sublime Text and VS Code (a new untitled tab in this window).
+    static let newTab = KeyboardShortcut("n", modifiers: .command)
+    /// Not a menu item: AppDelegate's key monitor. ⌘T, the browser-style second key.
+    static let newTabAlternate = KeyboardShortcut("t", modifiers: .command)
     static let newWindow = KeyboardShortcut("n", modifiers: [.command, .shift])
     static let open = KeyboardShortcut("o", modifiers: .command)
     static let openFolder = KeyboardShortcut("o", modifiers: [.command, .shift])
