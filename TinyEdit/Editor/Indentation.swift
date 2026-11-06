@@ -108,6 +108,83 @@ enum IndentEditing {
         return Edit(range: selection, string: "\n" + indent)
     }
 
+    /// Return in code, when the code before the caret ends with an opening bracket (or, in Python and YAML,
+    /// a colon): the new line is one level deeper. With the matching closer right after the caret
+    /// (`{|}`), the pair splits onto three lines and the caret goes on the middle one. Blanks around the
+    /// caret are dropped. A trailing line comment is ignored; an opener inside an unclosed string is not one.
+    /// Nil when no rule applies, and `newline` decides.
+    static func smartNewline(in text: NSString, selection: NSRange, language: EditorLanguage,
+                             style: IndentStyle) -> LineEdits? {
+        let colon = language == .python || language == .yaml
+        guard opensBlocks(language) else { return nil }
+        let lineStart = text.lineRange(for: NSRange(location: selection.location, length: 0)).location
+        guard let codeEnd = codeEnd(text, from: lineStart, to: selection.location, language: language) else { return nil }
+        var last = codeEnd
+        while last > lineStart, isBlank(text.character(at: last - 1)) { last -= 1 }
+        guard last > lineStart else { return nil }
+        let opener = text.character(at: last - 1)
+        let closer: unichar? = switch opener {
+        case 0x7B: 0x7D   // { }
+        case 0x5B: 0x5D   // [ ]
+        case 0x28: 0x29   // ( )
+        default: nil
+        }
+        guard closer != nil || (colon && opener == 0x3A) else { return nil }
+
+        var wsEnd = lineStart
+        while wsEnd < last, isBlank(text.character(at: wsEnd)) { wsEnd += 1 }
+        let indent = text.substring(with: NSRange(location: lineStart, length: wsEnd - lineStart))
+        let unit = switch style {
+        case .tabs: "\t"
+        case .spaces(let n): String(repeating: " ", count: max(n, 1))
+        }
+        // Replace from the end of the code before the caret (trailing blanks go) to the next non-blank after it.
+        var after = NSMaxRange(selection)
+        while after < text.length, isBlank(text.character(at: after)) { after += 1 }
+        let start = selection.location == codeEnd ? last : selection.location
+        let range = NSRange(location: start, length: after - start)
+        let inner = "\n" + indent + unit
+        let caret = start + (inner as NSString).length
+        if let closer, after < text.length, text.character(at: after) == closer {
+            return LineEdits(edits: [Edit(range: range, string: inner + "\n" + indent)],
+                             selection: NSRange(location: caret, length: 0))
+        }
+        return LineEdits(edits: [Edit(range: range, string: inner)], selection: NSRange(location: caret, length: 0))
+    }
+
+    /// Languages whose blocks open with a bracket or colon at the end of a line. Prose, markup and
+    /// line-oriented formats keep the plain indent.
+    private static func opensBlocks(_ language: EditorLanguage) -> Bool {
+        switch language {
+        case .plain, .markdown, .diff, .html, .xml, .makefile, .dockerfile, .ini, .latex: false
+        default: true
+        }
+    }
+
+    /// Where the code before `caret` ends: at the caret, or where a line comment starts. Nil when the caret
+    /// is inside a string. Quotes are `"`, `` ` `` and `'` (not in Rust, whose lifetimes are a lone `'`).
+    private static func codeEnd(_ text: NSString, from lineStart: Int, to caret: Int, language: EditorLanguage) -> Int? {
+        var comment: [unichar] = []
+        if case .line(let token)? = LineEditing.commentSyntax(for: language) { comment = Array(token.utf16) }
+        let single = language != .rust
+        var quote: unichar?
+        var i = lineStart
+        while i < caret {
+            let u = text.character(at: i)
+            if let q = quote {
+                if u == 0x5C { i += 2; continue }   // backslash escape
+                if u == q { quote = nil }
+            } else if u == 0x22 || u == 0x60 || (single && u == 0x27) {
+                quote = u
+            } else if !comment.isEmpty, u == comment[0], i + comment.count <= caret,
+                      (0..<comment.count).allSatisfy({ text.character(at: i + $0) == comment[$0] }) {
+                return i
+            }
+            i += 1
+        }
+        return quote == nil ? caret : nil
+    }
+
     /// Tab: a TAB, or spaces. In the leading whitespace the spaces run to the next multiple of the indent width
     /// (a TAB before the caret runs to the next `tabWidth` stop), so a ragged indent snaps onto the grid. After
     /// text it is always `width` spaces: column alignment there would assume CJK and emoji fallback glyphs are

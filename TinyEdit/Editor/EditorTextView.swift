@@ -51,15 +51,60 @@ final class EditorTextView: NSTextView {
     override func paste(_ sender: Any?) {
         onPasteBegin?()
         defer { onPasteEnd?() }
-        if onPasteboard?(.general) == true { return }
+        if onPasteboard?(.general) == true || pasteWholeLine(from: .general) { return }
         super.paste(sender)
     }
 
     override func pasteAsPlainText(_ sender: Any?) {
         onPasteBegin?()
         defer { onPasteEnd?() }
-        if onPasteboard?(.general) == true { return }
+        if onPasteboard?(.general) == true || pasteWholeLine(from: .general) { return }
         super.pasteAsPlainText(sender)
+    }
+
+    // MARK: Whole-line copy and cut
+
+    /// Marks a pasteboard string as a whole line that ⌘C / ⌘X took from an empty selection.
+    static let wholeLineType = NSPasteboard.PasteboardType("cn.hqyang.tinyedit.whole-line")
+
+    /// With nothing selected, Copy takes the caret's whole line, newline included.
+    override func copy(_ sender: Any?) {
+        guard selectedRanges.count == 1, selectedRange().length == 0, !hasMarkedText() else { return super.copy(sender) }
+        copyWholeLine(to: .general)
+    }
+
+    /// With nothing selected, Cut takes the caret's whole line and deletes it as one undo step.
+    override func cut(_ sender: Any?) {
+        guard selectedRanges.count == 1, selectedRange().length == 0, !hasMarkedText() else { return super.cut(sender) }
+        guard isEditable, let text = editedText, copyWholeLine(to: .general),
+              let change = LineEditing.deleteLines(in: text, selection: selectedRange()) else { return NSSound.beep() }
+        apply(change)
+    }
+
+    @discardableResult
+    func copyWholeLine(to pasteboard: NSPasteboard) -> Bool {
+        guard let text = editedText, text.length > 0 else { return false }
+        var line = text.substring(with: text.lineRange(for: NSRange(location: selectedRange().location, length: 0)))
+        if !line.hasSuffix("\n") { line += "\n" }
+        pasteboard.clearContents()
+        pasteboard.declareTypes([.string, Self.wholeLineType], owner: nil)
+        pasteboard.setString(line, forType: .string)
+        pasteboard.setString("", forType: Self.wholeLineType)
+        return true
+    }
+
+    /// A whole line pasted at a caret goes above the caret's line, and the caret moves down with its line.
+    /// Over a selection it replaces the selection like any text.
+    func pasteWholeLine(from pasteboard: NSPasteboard) -> Bool {
+        guard pasteboard.availableType(from: [Self.wholeLineType]) != nil, isEditable, !hasMarkedText(),
+              selectedRanges.count == 1, selectedRange().length == 0, let text = editedText,
+              let line = pasteboard.string(forType: .string), line.hasSuffix("\n") else { return false }
+        let caret = selectedRange().location
+        let lineStart = text.lineRange(for: NSRange(location: caret, length: 0)).location
+        let string = LineEnding.normalizeToLF(line)
+        insertPasted(string, replacing: NSRange(location: lineStart, length: 0))
+        setSelectedRange(NSRange(location: caret + (string as NSString).length, length: 0))
+        return true
     }
 
     override func pasteAsRichText(_ sender: Any?) {
@@ -100,8 +145,27 @@ final class EditorTextView: NSTextView {
 
     /// Committed text (services, IME commit, programmatic inserts) is folded the same way. Marked text is not.
     override func insertText(_ string: Any, replacementRange: NSRange) {
+        if let typed = string as? String, replacementRange.location == NSNotFound || replacementRange == selectedRange(),
+           let event = NSApp.currentEvent, event.type == .keyDown, event.characters == typed,
+           wrapSelection(with: typed) { return }
         super.insertText(Self.foldingCR(string), replacementRange: replacementRange)
     }
+
+    /// A quote or opening bracket typed over a selection wraps it instead of replacing it, as one undo
+    /// step, and the wrapped text stays selected. Only a key press does this (checked by `insertText`):
+    /// IME commits, services and programmatic inserts replace as usual.
+    func wrapSelection(with typed: String) -> Bool {
+        guard let closer = Self.wrapPairs[typed], isEditable, !hasMarkedText(), selectedRanges.count == 1 else { return false }
+        let sel = selectedRange()
+        guard sel.length > 0 else { return false }
+        apply(IndentEditing.LineEdits(
+            edits: [IndentEditing.Edit(range: NSRange(location: sel.location, length: 0), string: typed),
+                    IndentEditing.Edit(range: NSRange(location: NSMaxRange(sel), length: 0), string: closer)],
+            selection: NSRange(location: sel.location + 1, length: sel.length)))
+        return true
+    }
+
+    static let wrapPairs: [String: String] = ["\"": "\"", "'": "'", "`": "`", "(": ")", "[": "]", "{": "}"]
 
     static func foldingCR(_ value: Any) -> Any {
         switch value {
@@ -134,19 +198,24 @@ final class EditorTextView: NSTextView {
         case #selector(redo(_:)): return isEditable && undoManager?.canRedo == true
         case #selector(paste(_:)), #selector(pasteAsPlainText(_:)), #selector(pasteAsRichText(_:)):
             return isEditable && (canPasteboard?(.general) == true || super.validateUserInterfaceItem(item))
+        case #selector(copy(_:)) where selectedRange().length == 0:
+            return (editedText?.length ?? 0) > 0
+        case #selector(cut(_:)) where selectedRange().length == 0:
+            return isEditable && (editedText?.length ?? 0) > 0
         default: return super.validateUserInterfaceItem(item)
         }
     }
 
     /// The active buffer's indent style, resolved when a key is pressed. Nil means spaces of `tabWidth`.
     var indentStyle: (() -> IndentStyle)?
-    /// The active buffer's language, read on Return and on clicks: Markdown continues task items, and
-    /// Markdown and Plain Text flip a task's box when it is clicked. Nil leaves task lists alone.
     var autoIndent = true
     var smartBackspace = true
     var continueMarkdownTasks = true
 
-    var taskLanguage: (() -> EditorLanguage)?
+    /// The active buffer's language, read on Return and on clicks: code indents after an
+    /// opening bracket, Markdown continues task items, and Markdown and Plain Text flip a task's box when it
+    /// is clicked. Nil leaves all of that alone.
+    var bufferLanguage: (() -> EditorLanguage)?
 
     /// The marked values of a JSON tab, in document order, read in the overlay pass. Empty draws no marks.
     var jsonValueMarks: (() -> [JSONValueMark])?
@@ -231,6 +300,15 @@ final class EditorTextView: NSTextView {
 
     func toggleTask() { performLineEdit { TaskList.toggle(in: $0, selection: $1) } }
 
+    /// Edit ▸ Go to Matching Bracket. Beeps when no bracket is next to or around the caret.
+    func goToMatchingBracket() {
+        guard let text = editedText, let target = BracketMatcher.jumpTarget(in: text, caret: selectedRange().location) else {
+            return NSSound.beep()
+        }
+        setSelectedRange(NSRange(location: target, length: 0))
+        scrollRangeToVisible(selectedRange())
+    }
+
     // MARK: Task boxes
 
     /// A plain click on a task's box ticks or unticks it as one undo step. The selection stays where it was.
@@ -278,7 +356,7 @@ final class EditorTextView: NSTextView {
 
     /// The task whose box is under `point`, in view coordinates. Lays out only the box's line.
     func taskItem(at point: NSPoint) -> TaskList.Item? {
-        guard let language = taskLanguage?(), TaskList.supports(language), isEditable, !hasMarkedText(),
+        guard let language = bufferLanguage?(), TaskList.supports(language), isEditable, !hasMarkedText(),
               let text = editedText, text.length > 0 else { return nil }
         let index = characterIndexForInsertion(at: point)
         guard index != NSNotFound, index <= text.length else { return nil }
@@ -375,16 +453,24 @@ final class EditorTextView: NSTextView {
         if whitespaceMarkView.superview === self { addSubview(whitespaceMarkView) }
     }
 
-    /// Return keeps the current line's indentation, and continues a Markdown task list. Option-Return
-    /// (`insertNewlineIgnoringFieldEditor`) does neither.
+    /// Return keeps the current line's indentation (one level deeper after an opening bracket in code), and
+    /// continues a Markdown task list. Option-Return (`insertNewlineIgnoringFieldEditor`) does neither.
     override func insertNewline(_ sender: Any?) {
         guard let text = editedText else { return super.insertNewline(sender) }
-        if continueMarkdownTasks, let language = taskLanguage?(), TaskList.continuesOnReturn(language), !hasMarkedText(), selectedRanges.count == 1,
+        if continueMarkdownTasks, let language = bufferLanguage?(), TaskList.continuesOnReturn(language), !hasMarkedText(), selectedRanges.count == 1,
            let edit = TaskList.newline(in: text, selection: selectedRange()) {
             insertText(edit.string, replacementRange: edit.range)
             return
         }
         guard autoIndent else { return super.insertNewline(sender) }
+        if let language = bufferLanguage?(), !hasMarkedText(), selectedRanges.count == 1,
+           let change = IndentEditing.smartNewline(in: text, selection: selectedRange(), language: language,
+                                                   style: indentStyle?() ?? .spaces(tabWidth)),
+           let edit = change.edits.first {
+            insertText(edit.string, replacementRange: edit.range)
+            setSelectedRange(change.selection)
+            return
+        }
         let edit = IndentEditing.newline(in: text, selection: selectedRange())
         insertText(edit.string, replacementRange: edit.range)
     }

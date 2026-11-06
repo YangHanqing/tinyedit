@@ -76,7 +76,7 @@ final class EditorSettingsTests: XCTestCase {
         reset("    ")
         host.textView.deleteBackward(nil)
         XCTAssertEqual(store.logicalString(), "   ")
-        host.textView.taskLanguage = { .markdown }
+        host.textView.bufferLanguage = { .markdown }
         reset("- [ ] task")
         host.textView.insertNewline(nil)
         XCTAssertEqual(store.logicalString(), "- [ ] task\n- [ ] ")

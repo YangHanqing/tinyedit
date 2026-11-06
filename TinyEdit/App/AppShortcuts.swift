@@ -27,6 +27,7 @@ enum AppShortcut {
     static let findNext = KeyboardShortcut("g", modifiers: .command)
     static let findPrevious = KeyboardShortcut("g", modifiers: [.command, .shift])
     static let goToLine = KeyboardShortcut("l", modifiers: .command)
+    static let goToMatchingBracket = KeyboardShortcut("\\", modifiers: [.command, .shift])
 
     static let duplicateLine = KeyboardShortcut("d", modifiers: [.command, .shift])
     static let moveLineUp = KeyboardShortcut(.upArrow, modifiers: .option)
@@ -114,7 +115,7 @@ enum ShortcutCatalog {
             ShortcutItem("Join Lines", AppShortcut.joinLines),
             ShortcutItem("Indent", key(.tab)),
             ShortcutItem("Outdent", key(.tab, .shift)),
-            ShortcutItem("New line with the same indentation", key(.return)),
+            ShortcutItem("New line, indented after an opening bracket", key(.return)),
             ShortcutItem("New line without indentation", key(.return, .option)),
             ShortcutItem("Delete one indent level", key(.delete)),
         ]),
@@ -125,6 +126,7 @@ enum ShortcutCatalog {
             ShortcutItem("Find Previous", AppShortcut.findPrevious),
             ShortcutItem("Previous match from the find field", key(.return, .shift)),
             ShortcutItem("Go to Line…", AppShortcut.goToLine),
+            ShortcutItem("Go to Matching Bracket", AppShortcut.goToMatchingBracket),
             ShortcutItem("Close the find or Go to Line card", key(.escape)),
         ]),
         ShortcutGroup(title: "View", items: [

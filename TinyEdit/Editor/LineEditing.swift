@@ -252,6 +252,23 @@ enum BracketMatcher {
         return nil
     }
 
+    /// Where Go to Matching Bracket puts the caret: just past a closing partner, just before an opening one,
+    /// so pressing it again jumps back. With no bracket next to the caret, the enclosing pair's opener.
+    static func jumpTarget(in text: NSString, caret: Int) -> Int? {
+        if let (near, far) = match(in: text, caret: caret) {
+            return far.location > near.location ? NSMaxRange(far) : far.location
+        }
+        var depth = 0
+        var i = caret - 1
+        while i >= 0, caret - i <= scanLimit {
+            if let (_, forward) = pairs[text.character(at: i)] {
+                if !forward { depth += 1 } else if depth == 0 { return i } else { depth -= 1 }
+            }
+            i -= 1
+        }
+        return nil
+    }
+
     private static let pairs: [unichar: (unichar, Bool)] = [
         0x28: (0x29, true), 0x5B: (0x5D, true), 0x7B: (0x7D, true),     // ( [ {
         0x29: (0x28, false), 0x5D: (0x5B, false), 0x7D: (0x7B, false),   // ) ] }

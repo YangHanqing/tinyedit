@@ -2,13 +2,14 @@ import Foundation
 
 /// A Tools submenu, and the category shown beside a tool in the command palette.
 enum TextToolGroup: CaseIterable, Sendable {
-    case json, encoding, lines, cleanup
+    case json, encoding, lines, textCase, cleanup
 
     var title: String {
         switch self {
         case .json: "JSON"
         case .encoding: String(localized: "Encode & Decode")
         case .lines: String(localized: "Lines")
+        case .textCase: String(localized: "Change Case")
         case .cleanup: String(localized: "Clean Up")
         }
     }
@@ -23,6 +24,7 @@ enum TextTool: String, CaseIterable, Identifiable, Sendable {
     case base64Decode, base64Encode, urlDecode, urlEncode, unescapeUnicode
     case decodeJWT, timestampToDate
     case sortLinesAscending, sortLinesDescending, reverseLines, shuffleLines, removeDuplicateLines
+    case uppercase, lowercase, titleCase, camelCase, pascalCase, snakeCase, constantCase, kebabCase
     case removeBlankLines, trimTrailingWhitespace, removeANSIEscapes, removeInvisibleCharacters
 
     var id: String { rawValue }
@@ -50,6 +52,14 @@ enum TextTool: String, CaseIterable, Identifiable, Sendable {
         case .trimTrailingWhitespace: "Trim Trailing Whitespace"
         case .removeANSIEscapes: "Remove ANSI Escape Codes"
         case .removeInvisibleCharacters: "Remove Invisible Characters"
+        case .uppercase: "UPPERCASE"
+        case .lowercase: "lowercase"
+        case .titleCase: "Title Case"
+        case .camelCase: "camelCase"
+        case .pascalCase: "PascalCase"
+        case .snakeCase: "snake_case"
+        case .constantCase: "CONSTANT_CASE"
+        case .kebabCase: "kebab-case"
         }
     }
 
@@ -75,6 +85,10 @@ enum TextTool: String, CaseIterable, Identifiable, Sendable {
         case .trimTrailingWhitespace: String(localized: "Trim Trailing Whitespace")
         case .removeANSIEscapes: String(localized: "Remove ANSI Escape Codes")
         case .removeInvisibleCharacters: String(localized: "Remove Invisible Characters")
+        case .uppercase: String(localized: "UPPERCASE")
+        case .lowercase: String(localized: "lowercase")
+        case .titleCase: String(localized: "Title Case")
+        case .camelCase, .pascalCase, .snakeCase, .constantCase, .kebabCase: englishTitle
         }
     }
 
@@ -98,6 +112,14 @@ enum TextTool: String, CaseIterable, Identifiable, Sendable {
         case .trimTrailingWhitespace: "spaces strip end clean"
         case .removeANSIEscapes: "color colour terminal escape sequences strip clean"
         case .removeInvisibleCharacters: "zero width hidden unicode bidi control strip clean"
+        case .uppercase: "upper capital caps"
+        case .lowercase: "lower small"
+        case .titleCase: "capitalize words headline"
+        case .camelCase: "identifier variable lower camel"
+        case .pascalCase: "identifier type upper camel"
+        case .snakeCase: "identifier underscore python"
+        case .constantCase: "identifier underscore screaming upper constant"
+        case .kebabCase: "identifier dash hyphen slug css"
         }
     }
 
@@ -107,6 +129,7 @@ enum TextTool: String, CaseIterable, Identifiable, Sendable {
         case .base64Decode, .base64Encode, .urlDecode, .urlEncode, .unescapeUnicode,
              .decodeJWT, .timestampToDate: .encoding
         case .sortLinesAscending, .sortLinesDescending, .reverseLines, .shuffleLines, .removeDuplicateLines: .lines
+        case .uppercase, .lowercase, .titleCase, .camelCase, .pascalCase, .snakeCase, .constantCase, .kebabCase: .textCase
         case .removeBlankLines, .trimTrailingWhitespace, .removeANSIEscapes, .removeInvisibleCharacters: .cleanup
         }
     }
@@ -114,7 +137,7 @@ enum TextTool: String, CaseIterable, Identifiable, Sendable {
     /// Within a submenu, a divider goes before a tool that starts a new run of related tools.
     var startsSubsection: Bool {
         switch self {
-        case .decodeJWT, .reverseLines, .removeDuplicateLines, .removeANSIEscapes: true
+        case .decodeJWT, .reverseLines, .removeDuplicateLines, .camelCase, .removeANSIEscapes: true
         default: false
         }
     }
@@ -166,7 +189,48 @@ enum TextTransform {
             return lines(s) { $0.map { String($0.reversed().drop(while: \.isWhitespace).reversed()) } }
         case .removeANSIEscapes: return TextCleanup.removingANSI(s)
         case .removeInvisibleCharacters: return TextCleanup.removingInvisible(s)
+        case .uppercase: return s.uppercased()
+        case .lowercase: return s.lowercased()
+        case .titleCase: return s.capitalized
+        case .camelCase: return identifiers(s) { w in w.enumerated().map { $0 == 0 ? $1.lowercased() : $1.capitalized }.joined() }
+        case .pascalCase: return identifiers(s) { $0.map(\.capitalized).joined() }
+        case .snakeCase: return identifiers(s) { $0.map { $0.lowercased() }.joined(separator: "_") }
+        case .constantCase: return identifiers(s) { $0.map { $0.uppercased() }.joined(separator: "_") }
+        case .kebabCase: return identifiers(s) { $0.map { $0.lowercased() }.joined(separator: "-") }
         }
+    }
+
+    // MARK: Case
+
+    /// Each line's words joined by `join`, keeping the line's leading and trailing blanks. Words are runs of
+    /// letters and digits, split at `_`, `-`, spaces and other punctuation, at a lowercase-to-uppercase step
+    /// (`userName`) and before the last capital of an acronym (`HTTPServer` is `HTTP`, `Server`).
+    private static func identifiers(_ s: String, _ join: ([String]) -> String) -> String {
+        s.components(separatedBy: "\n").map { line in
+            let words = words(line)
+            guard !words.isEmpty else { return line }
+            let lead = line.prefix(while: { $0 == " " || $0 == "\t" })
+            let trail = String(line.reversed().prefix(while: { $0 == " " || $0 == "\t" }).reversed())
+            return lead + join(words) + trail
+        }.joined(separator: "\n")
+    }
+
+    static func words(_ s: String) -> [String] {
+        var words: [String] = []
+        var current: [Character] = []
+        let chars = Array(s)
+        func flush() { if !current.isEmpty { words.append(String(current)); current = [] } }
+        for (i, c) in chars.enumerated() {
+            guard c.isLetter || c.isNumber else { flush(); continue }
+            if let p = current.last {
+                let next = i + 1 < chars.count ? chars[i + 1] : nil
+                if c.isUppercase, p.isLowercase || p.isNumber { flush() }
+                else if c.isUppercase, p.isUppercase, next?.isLowercase == true { flush() }
+            }
+            current.append(c)
+        }
+        flush()
+        return words
     }
 
     // MARK: Lines

@@ -64,6 +64,8 @@ struct AppCommands: Commands {
                 .keyboardShortcut(AppShortcut.findPrevious)
             Button("Go to Line…") { appState.showGoToLine() }
                 .keyboardShortcut(AppShortcut.goToLine)
+            Button("Go to Matching Bracket") { appState.goToMatchingBracket() }
+                .keyboardShortcut(AppShortcut.goToMatchingBracket)
             Divider()
             Menu("Line") {
                 Button("Duplicate Line") { appState.runLineCommand(.duplicate) }

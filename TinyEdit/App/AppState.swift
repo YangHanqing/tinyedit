@@ -164,7 +164,7 @@ final class AppState {
                 || self.dismissPasteSuggestionFromEscape()
         }
         host.textView.indentStyle = { [weak self] in self?.activeIndentStyle ?? EditorSettings().preferredIndent }
-        host.textView.taskLanguage = { [weak self] in self?.selectedBuffer?.language ?? .plain }
+        host.textView.bufferLanguage = { [weak self] in self?.selectedBuffer?.language ?? .plain }
         host.textView.jsonValueMarks = { [weak self] in self?.visibleJSONMarks ?? [] }
         host.textView.onJSONMarkClick = { [weak self] in self?.activateJSONMark(at: $0) }
         host.textView.onPasteBegin = { [weak self] in self?.beginPasteRecognition() }
@@ -435,6 +435,14 @@ final class AppState {
 
     private func setSelectionStats(_ stats: SelectionStats?) {
         if stats != selectionStats { selectionStats = stats }
+    }
+
+    /// The status bar's Sum button: copies the selected numbers' total, without grouping.
+    func copySelectionSum(to pasteboard: NSPasteboard = .general) {
+        guard let numbers = selectionStats?.numbers else { return }
+        pasteboard.clearContents()
+        pasteboard.setString(numbers.plainSum, forType: .string)
+        showToast(String(localized: "Copied sum \(numbers.plainSum)"))
     }
 
     func refreshStatus(for store: BufferTextStore? = nil) {

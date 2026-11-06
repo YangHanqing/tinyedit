@@ -44,6 +44,12 @@ extension AppState {
 
     // MARK: Go to line
 
+    /// Moves the caret to the partner of the bracket next to it, or to the enclosing pair's opener.
+    func goToMatchingBracket() {
+        guard activeStore != nil else { return }
+        host.textView.goToMatchingBracket()
+    }
+
     func showGoToLine() {
         if find.visible { hideFind() }
         goToLineVisible = true

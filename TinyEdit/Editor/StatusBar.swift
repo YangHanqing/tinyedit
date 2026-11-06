@@ -22,6 +22,13 @@ struct StatusBar: View {
                     String(localized: "Words \(selection.words)"),
                     String(localized: "UTF-8 bytes: \(selection.utf8Bytes)")
                 ].joined(separator: "\n"))
+                if let numbers = selection.numbers {
+                    StatusGhostButton(String(localized: "Sum \(numbers.sum.formatted(.number))"),
+                                      hint: String(localized: "\(numbers.count) numbers, average \(numbers.average.formatted(.number.precision(.fractionLength(0...6)))). Click to copy the sum.")) {
+                        appState.copySelectionSum()
+                    }
+                    .monospacedDigit()
+                }
             }
             if let tasks = s.tasks {
                 Text("Tasks \(tasks.done)/\(tasks.total)")
