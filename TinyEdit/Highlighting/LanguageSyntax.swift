@@ -29,6 +29,9 @@ struct LanguageSyntax: Sendable {
     var colonSpaceKeys = false             // CSS `prop: value`
     var keyValue = false                   // YAML/TOML/INI key at the start of a line
     var sectionHeaders = false             // `[section]`
+    var valueBrackets = false              // TOML arrays span lines: a `[` line inside one is not a section
+    var inlineTableKeys = false            // TOML `{ key = v, … }`
+    var dateTimes = false                  // `1979-05-27T07:32:00Z`, `07:32:00`
     var hashNeedsBoundary = false          // `#` starts a comment only after whitespace (`$#`, `${#a}`)
 
     init() {}
@@ -116,12 +119,12 @@ struct LanguageSyntax: Sendable {
             $0.attributePrefix = 0x40; $0.hexColors = true; $0.dashIdentifiers = true; $0.colonSpaceKeys = true
         },
         .yaml: LanguageSyntax(keywords: "", constants: "true false null yes no on off True False Null ~", line: ["#"]) {
-            $0.keyValue = true; $0.hashNeedsBoundary = true
+            $0.keyValue = true; $0.hashNeedsBoundary = true; $0.dateTimes = true
         },
-        .toml: LanguageSyntax(keywords: "", constants: "true false", line: ["#"],
+        .toml: LanguageSyntax(keywords: "", constants: "true false inf nan", line: ["#"],
                               strings: [StringRule("\"\"\"", multiline: true), StringRule("'''", escapes: false, multiline: true),
                                         StringRule("\""), StringRule("'", escapes: false)]) {
-            $0.keyValue = true; $0.sectionHeaders = true
+            $0.keyValue = true; $0.sectionHeaders = true; $0.valueBrackets = true; $0.inlineTableKeys = true; $0.dateTimes = true
         },
         .ini: LanguageSyntax(keywords: "", constants: "true false yes no on off", line: [";", "#"]) {
             $0.keyValue = true; $0.sectionHeaders = true; $0.hashNeedsBoundary = true

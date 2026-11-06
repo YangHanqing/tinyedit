@@ -55,13 +55,15 @@ enum EditorLanguage: String, Codable, CaseIterable, Sendable {
 
     private static let byExtension: [String: EditorLanguage] = {
         let table: [(EditorLanguage, String)] = [
-            (.markdown, "md markdown mdown mkd"), (.json, "json jsonc json5 geojson webmanifest"),
+            (.markdown, "md markdown mdown mkd"),
+            (.json, "json jsonc json5 geojson webmanifest jsonl ndjson har ipynb xcstrings code-workspace"),
             (.python, "py pyw pyi"), (.javascript, "js mjs cjs jsx"), (.typescript, "ts tsx mts cts"),
             (.java, "java"), (.kotlin, "kt kts"), (.swift, "swift"), (.go, "go"), (.rust, "rs"),
             (.c, "c h"), (.cpp, "cpp cc cxx c++ hpp hh hxx h++ mm ino"), (.csharp, "cs csx"),
             (.php, "php phtml"), (.ruby, "rb rake gemspec ru"), (.perl, "pl pm t"), (.lua, "lua"),
             (.shell, "sh bash zsh ksh fish command"), (.powershell, "ps1 psm1 psd1"), (.sql, "sql"),
-            (.html, "html htm xhtml vue svelte"), (.xml, "xml xsd xsl xslt plist svg xaml csproj storyboard xib"),
+            (.html, "html htm xhtml vue svelte"),
+            (.xml, "xml xsd xsl xslt plist svg xaml csproj storyboard xib entitlements xcscheme xcworkspacedata"),
             (.css, "css"), (.scss, "scss sass less"), (.yaml, "yaml yml"), (.toml, "toml"),
             (.ini, "ini cfg conf properties env editorconfig gitconfig"), (.makefile, "mk mak"),
             (.diff, "diff patch"), (.r, "r rmd"), (.dart, "dart"), (.scala, "scala sc"),
@@ -72,12 +74,25 @@ enum EditorLanguage: String, Codable, CaseIterable, Sendable {
         return map
     }()
 
-    private static let byFilename: [String: EditorLanguage] = [
-        "makefile": .makefile, "gnumakefile": .makefile, "dockerfile": .dockerfile,
-        "gemfile": .ruby, "rakefile": .ruby, "podfile": .ruby, "vagrantfile": .ruby,
-        ".bashrc": .shell, ".bash_profile": .shell, ".zshrc": .shell, ".zprofile": .shell, ".profile": .shell,
-        "cmakelists.txt": .plain, ".gitconfig": .ini,
-    ]
+    /// Lower-cased names of files whose extension does not say what they hold: lock files, rc files, dotfiles.
+    private static let byFilename: [String: EditorLanguage] = {
+        let table: [(EditorLanguage, String)] = [
+            (.makefile, "makefile gnumakefile"), (.dockerfile, "dockerfile containerfile"),
+            (.ruby, "gemfile rakefile podfile vagrantfile brewfile fastfile appfile dangerfile guardfile capfile berksfile"),
+            (.shell, ".bashrc .bash_profile .bash_login .bash_logout .bash_aliases .zshrc .zprofile .zshenv .zlogin .zlogout .profile .kshrc .envrc"),
+            (.toml, "cargo.lock poetry.lock uv.lock pdm.lock gopkg.lock pipfile"),
+            (.json, "composer.lock flake.lock deno.lock package.resolved .jshintrc .swcrc .watchmanconfig"),
+            (.yaml, "podfile.lock pubspec.lock .clang-format .clang-tidy .yamllint"),
+            (.ini, ".gitconfig .gitmodules .npmrc .pypirc .pylintrc .flake8 .coveragerc"),
+            (.groovy, "jenkinsfile"), (.plain, "cmakelists.txt"),
+        ]
+        var map: [String: EditorLanguage] = [:]
+        for (lang, names) in table { for name in names.split(separator: " ") { map[String(name)] = lang } }
+        return map
+    }()
+
+    /// Written as either JSON or YAML: the first character decides.
+    private static let jsonOrYAML: Set<String> = [".babelrc", ".eslintrc", ".prettierrc", ".stylelintrc", ".lintstagedrc"]
 
     static func from(fileExtension ext: String) -> EditorLanguage {
         byExtension[ext.lowercased()] ?? .plain
@@ -87,9 +102,16 @@ enum EditorLanguage: String, Codable, CaseIterable, Sendable {
     static func detect(fileName: String, text: String) -> EditorLanguage {
         let lower = fileName.lowercased()
         if let l = byFilename[lower] { return l }
+        if jsonOrYAML.contains(lower) {
+            let first = text.first { !$0.isWhitespace }
+            return first == nil || first == "{" || first == "[" ? .json : .yaml
+        }
         if lower.hasPrefix("dockerfile.") { return .dockerfile }
+        if lower == ".env" || lower.hasPrefix(".env.") { return .ini }    // .env.local, .env.production
         let ext = (fileName as NSString).pathExtension
         if !ext.isEmpty { return from(fileExtension: ext) }
+        // NSString gives a dotfile no extension: `.editorconfig` is named by what follows its dot.
+        if lower.hasPrefix("."), case let l = from(fileExtension: String(lower.dropFirst())), l != .plain { return l }
         guard text.hasPrefix("#!") else { return .plain }
         let first = String(text.prefix(200).split(whereSeparator: \.isNewline).first ?? "")
         for (needle, lang) in [("python", EditorLanguage.python), ("node", .javascript), ("ruby", .ruby), ("perl", .perl),

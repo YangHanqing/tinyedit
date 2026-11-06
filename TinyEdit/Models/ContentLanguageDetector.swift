@@ -165,7 +165,13 @@ enum ContentLanguageDetector {
     /// TOML and INI need a section header; extension-less `.env` files need upper-case keys.
     private static func keyValueConfig(_ lines: [String]) -> EditorLanguage? {
         var sections = 0, keys = 0, upperKeys = 0, tomlValues = 0, bareValues = 0
+        var openBrackets = 0, openString: String?     // inside a TOML array or `"""` string spanning lines
         for line in lines.prefix(lineLimit) {
+            if let quote = openString {
+                if line.contains(quote) { openString = nil }
+                continue
+            }
+            if openBrackets > 0 { openBrackets = max(0, openBrackets + bracketBalance(line)); continue }
             if line.hasPrefix("#") || line.hasPrefix(";") { continue }
             if line.range(of: #"^\[\[?[\w.\- "']+\]\]?$"#, options: .regularExpression) != nil {
                 sections += 1
@@ -177,12 +183,37 @@ enum ContentLanguageDetector {
             keys += 1
             if line[..<eq].range(of: #"^[A-Z][A-Z0-9_]*$"#, options: .regularExpression) != nil { upperKeys += 1 }
             let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+            if let quote = ["\"\"\"", "'''"].first(where: value.hasPrefix) {
+                tomlValues += 1
+                if !value.dropFirst(3).contains(quote) { openString = quote }
+                continue
+            }
+            if value.hasPrefix("[") { openBrackets = max(0, bracketBalance(value)) }
             if value.range(of: #"^(?:["'\[{]|\d{4}-\d{2}-\d{2})"#, options: .regularExpression) != nil { tomlValues += 1 }
             else if value.range(of: #"^(?:true|false|[-+]?\d[\d_]*(?:\.\d+)?)$"#, options: .regularExpression) == nil { bareValues += 1 }
         }
         guard keys > 0 else { return nil }
         if sections > 0 { return tomlValues > 0 && bareValues == 0 ? .toml : .ini }
         return keys >= 2 && upperKeys == keys ? .ini : nil
+    }
+
+    /// Open `[` minus `]` on a line, outside quotes and before a `#` comment.
+    private static func bracketBalance(_ line: some StringProtocol) -> Int {
+        var depth = 0, quote: Character?, escaped = false
+        for ch in line {
+            if let q = quote {
+                if escaped { escaped = false } else if ch == "\\", q == "\"" { escaped = true } else if ch == q { quote = nil }
+                continue
+            }
+            switch ch {
+            case "\"", "'": quote = ch
+            case "[": depth += 1
+            case "]": depth -= 1
+            case "#": return depth
+            default: break
+            }
+        }
+        return depth
     }
 
     /// Mostly command or control-flow lines. Commands that are also everyday English words (go, make, open, find) are left out.
