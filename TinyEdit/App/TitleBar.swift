@@ -5,10 +5,7 @@ import SwiftUI
 struct TitleBar: View {
     @Environment(AppState.self) private var appState
 
-    /// Clearance for the traffic lights and the sidebar button; mirrored on the trailing side so the title stays centered.
     private static let sideInset: CGFloat = 108
-    /// Where the sidebar button starts: just past the traffic lights.
-    private static let sidebarButtonInset: CGFloat = 74
 
     var body: some View {
         let buffer = appState.selectedBuffer
@@ -18,13 +15,11 @@ struct TitleBar: View {
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, Self.sideInset)
                 .allowsHitTesting(false)   // clicks on the title reach the drag area beneath
-            HStack {
-                TitleBarButton(symbol: "sidebar.left", help: String(localized: "Sidebar (⌃⌘S)"),
-                               active: appState.sidebarVisible) { appState.toggleSidebar() }
-                Spacer(minLength: 0)
-            }
-            .padding(.leading, Self.sidebarButtonInset)
             HStack(spacing: 2) {
+                if !appState.folders.isEmpty {
+                    TitleBarButton(symbol: "sidebar.left", help: String(localized: "Sidebar (⌃⌘S)"),
+                                   active: appState.sidebarVisible) { appState.toggleSidebar() }
+                }
                 if buffer?.language == .markdown {
                     TitleBarButton(symbol: appState.previewVisible ? "eye.fill" : "eye",
                                    help: String(localized: "Markdown Preview (⇧⌘V)"),

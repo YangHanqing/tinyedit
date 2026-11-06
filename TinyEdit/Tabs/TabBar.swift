@@ -40,7 +40,7 @@ struct TabBar: View {
                                 isRenaming: renamingID == buffer.id,
                                 onRename: { finishRename(buffer.id, name: $0) })
                             .contextMenu { menu(for: buffer) }
-                            .onDrag { TabDrag.begin(buffer.id) }
+                            .background(TabDragSource(id: buffer.id, title: buffer.displayTitle, enabled: renamingID != buffer.id))
                             .onDrop(of: [TabDrag.type], isTargeted: nil) { _ in dropTab(before: buffer.id) }
                     }
                 }

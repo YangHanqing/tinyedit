@@ -174,7 +174,7 @@ final class Workspaces {
         let path = url.standardizedFileURL.resolvingSymlinksInPath().path
         var best: (AppState, Int)?
         for state in all {
-            for folder in state.folders where folder.contains(path) && folder.path.count > (best?.1 ?? -1) {
+            for folder in state.folders where !folder.unavailable && folder.contains(path) && folder.path.count > (best?.1 ?? -1) {
                 best = (state, folder.path.count)
             }
         }

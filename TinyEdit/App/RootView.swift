@@ -11,7 +11,7 @@ struct RootView: View {
             // The tab ScrollView's backing view reaches up into the title-bar safe area; keep the title above it.
             TitleBar().zIndex(1)
             HStack(spacing: 0) {
-                if appState.sidebarVisible {
+                if appState.sidebarVisible && !appState.folders.isEmpty {
                     SidebarView()
                         .frame(width: appState.sidebarWidth)
                     SidebarResizeHandle()

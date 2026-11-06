@@ -75,6 +75,65 @@ final class WorkspaceTests: XCTestCase {
         await dispose(b)
     }
 
+    func testMovedRootKeepsExpansionAndDeletedRootKeepsDraft() async throws {
+        let state = await window()
+        let folder = state.root.appendingPathComponent("project")
+        let child = folder.appendingPathComponent("deep")
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        state.addFolder(folder)
+        let id = try XCTUnwrap(state.folders.first?.id)
+        state.fileTree.toggle(child.path)
+        let moved = state.root.appendingPathComponent("renamed")
+        try FileManager.default.moveItem(at: folder, to: moved)
+        state.refreshFolderLocations()
+        XCTAssertEqual(state.folders.first?.path, moved.path)
+        XCTAssertTrue(state.fileTree.expanded.contains(moved.appendingPathComponent("deep").path))
+        let tab = try XCTUnwrap(state.session.selectedBufferID)
+        state.stores[tab]!.textStorage.replaceCharacters(in: NSRange(location: 0, length: 0), with: "keep draft")
+        try FileManager.default.removeItem(at: moved)
+        state.refreshFolderLocations()
+        XCTAssertTrue(state.folders.first?.unavailable == true)
+        XCTAssertTrue(state.fileTree.unreadable.contains(moved.path))
+        XCTAssertEqual(state.stores[tab]?.logicalString(), "keep draft")
+        state.removeFolder(id)
+        XCTAssertTrue(state.folderMonitors.isEmpty)
+        await dispose(state)
+    }
+
+    func testRootWatcherFollowsRenameAndDeletion() async throws {
+        let state = await window()
+        let old = state.root.appendingPathComponent("watched")
+        let new = state.root.appendingPathComponent("moved")
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        state.addFolder(old)
+        try FileManager.default.moveItem(at: old, to: new)
+        for _ in 0..<60 {
+            if state.folders.first?.path == new.path { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertEqual(state.folders.first?.path, new.path)
+        try FileManager.default.removeItem(at: new)
+        for _ in 0..<60 {
+            if state.folders.first?.unavailable == true { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertTrue(state.folders.first?.unavailable == true)
+        await dispose(state)
+    }
+
+    func testCancelledNativeDragDoesNotDetachTab() async throws {
+        let state = await window()
+        let id = try XCTUnwrap(state.session.selectedBufferID)
+        let count = Workspaces.shared.windows.count
+        TabDrag.begin(id)
+        TabDrag.end(at: NSPoint(x: -10000, y: -10000), cancelled: true)
+        await Task.yield()
+        XCTAssertNil(TabDrag.current)
+        XCTAssertEqual(Workspaces.shared.windows.count, count)
+        XCTAssertNotNil(state.session.buffers[id])
+        await dispose(state)
+    }
+
     func testConcurrentOpenInTwoWindowsHasOneOwner() async throws {
         let a = await window(), b = await window()
         let file = a.root.appendingPathComponent("concurrent.txt")

@@ -6,6 +6,7 @@ struct WorkspaceFolder: Identifiable, Equatable {
     let id: UUID
     var bookmark: Data
     var url: URL
+    var unavailable = false
     var scopeURL: URL
     var name: String { url.lastPathComponent }
     var path: String { url.path }
@@ -79,6 +80,9 @@ extension AppState {
             // A scope that needs no opening (inside the container) starts as false; the bookmark resolving is what counts.
             guard let (url, stale) = try? access.resolve(stored.bookmark) else {
                 Log.files.error("workspace folder bookmark failed")
+                loaded.append(WorkspaceFolder(id: UUID(), bookmark: stored.bookmark,
+                                              url: URL(fileURLWithPath: stored.path), unavailable: true,
+                                              scopeURL: URL(fileURLWithPath: stored.path)))
                 continue
             }
             access.start(url)
@@ -86,10 +90,18 @@ extension AppState {
             if stale, let fresh = try? access.bookmark(for: url) { bookmark = fresh }
             let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
             guard !loaded.contains(where: { $0.path == resolved.path }) else { access.stop(url); continue }
-            loaded.append(WorkspaceFolder(id: UUID(), bookmark: bookmark, url: resolved, scopeURL: url))
+            let missing = !FileManager.default.fileExists(atPath: resolved.path)
+                || resolved.pathComponents.contains(".Trash") || resolved.pathComponents.contains(".Trashes")
+            loaded.append(WorkspaceFolder(id: UUID(), bookmark: bookmark,
+                                          url: missing ? URL(fileURLWithPath: stored.path) : resolved,
+                                          unavailable: missing, scopeURL: url))
         }
         folders = loaded
         fileTree.restore(expanded: Set(file.expanded), roots: loaded.map(\.path))
+        for folder in loaded {
+            if folder.unavailable { fileTree.markUnavailable(folder.path) }
+            else { monitorFolder(folder) }
+        }
     }
 
     /// Written in order, off the main thread. A closing window writes nothing more.
@@ -123,6 +135,7 @@ extension AppState {
             do {
                 let bookmark = try access.bookmark(for: url)
                 folders.append(WorkspaceFolder(id: UUID(), bookmark: bookmark, url: resolved, scopeURL: url))
+                monitorFolder(folders.last!)
                 fileTree.addRoot(resolved.path)
                 noteRecentDocument(url)
             } catch {
@@ -137,9 +150,74 @@ extension AppState {
     func removeFolder(_ id: UUID) {
         guard let index = folders.firstIndex(where: { $0.id == id }) else { return }
         let folder = folders.remove(at: index)
+        folderMonitors.removeValue(forKey: id)?.unregister()
         fileTree.removeRoot(folder.path)
         access.stop(folder.scopeURL)
         saveWorkspace()
+    }
+
+    func refreshFolderLocations() {
+        for folder in folders {
+            if let resolved = try? access.resolve(folder.bookmark).url {
+                let path = resolved.standardizedFileURL.resolvingSymlinksInPath().path
+                if path != folder.path || folder.unavailable { folderMoved(folder.id, to: resolved) }
+                else if !FileManager.default.fileExists(atPath: path) { folderUnavailable(folder.id) }
+            } else if !FileManager.default.fileExists(atPath: folder.path) {
+                folderUnavailable(folder.id)
+            }
+        }
+    }
+
+    /// A directory presenter follows root moves, while FSEvents handles changes inside the tree.
+    private func monitorFolder(_ folder: WorkspaceFolder) {
+        folderMonitors.removeValue(forKey: folder.id)?.unregister()
+        let monitor = ExternalFileMonitor(url: folder.url)
+        let id = folder.id
+        monitor.onMove = { [weak self] url in
+            Task { @MainActor in self?.folderMoved(id, to: url) }
+        }
+        monitor.onDelete = { [weak self] in
+            Task { @MainActor in self?.folderUnavailable(id) }
+        }
+        monitor.register()
+        folderMonitors[id] = monitor
+    }
+
+    func folderUnavailable(_ id: UUID) {
+        guard !closing, let index = folders.firstIndex(where: { $0.id == id }) else { return }
+        folders[index].unavailable = true
+        fileTree.markUnavailable(folders[index].path)
+        saveWorkspace()
+    }
+
+    func folderMoved(_ id: UUID, to url: URL) {
+        guard !closing, let index = folders.firstIndex(where: { $0.id == id }) else { return }
+        // Moving to Trash is a deletion from the project's perspective. Keep open text buffers intact.
+        guard !url.pathComponents.contains(".Trash"), !url.pathComponents.contains(".Trashes"),
+              FileManager.default.fileExists(atPath: url.path) else { folderUnavailable(id); return }
+        let old = folders[index].path
+        let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
+        folders[index].url = resolved
+        folders[index].unavailable = false
+        if let bookmark = try? access.bookmark(for: url) { folders[index].bookmark = bookmark }
+        fileTree.moveRoot(old, to: resolved.path)
+        monitorFolder(folders[index])
+        saveWorkspace()
+    }
+
+    func locateFolder(_ id: UUID) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url,
+              let index = folders.firstIndex(where: { $0.id == id }),
+              let bookmark = try? access.bookmark(for: url) else { return }
+        let old = folders[index]
+        access.start(url)
+        folders[index].scopeURL = url
+        folders[index].bookmark = bookmark
+        folderMoved(id, to: url)
+        access.stop(old.scopeURL)
     }
 
     func toggleSidebar() {
@@ -248,6 +326,8 @@ extension AppState {
             stores[id]?.invalidate()
         }
         for folder in folders { access.stop(folder.scopeURL) }
+        for monitor in folderMonitors.values { monitor.unregister() }
+        folderMonitors.removeAll()
         fileTree.stopWatching()
         await workspaceWrite?.value
     }

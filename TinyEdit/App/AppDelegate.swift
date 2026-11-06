@@ -86,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The main window's scene phase covers it; the other windows are checked here.
     @MainActor
     func applicationDidBecomeActive(_ notification: Notification) {
+        for window in Workspaces.shared.all { window.refreshFolderLocations() }
         let state = Workspaces.shared.target
         guard !state.isMain else { return }
         Task { await state.checkSelectedFileForExternalChanges() }

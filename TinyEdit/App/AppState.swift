@@ -123,6 +123,7 @@ final class AppState {
     /// window has its own session under `Workspaces/<id>/` and is closed, not hidden, by the red button.
     @ObservationIgnored let workspaceID: UUID?
     @ObservationIgnored let fileTree = FileTreeModel()
+    @ObservationIgnored var folderMonitors: [UUID: ExternalFileMonitor] = [:]
     /// The launch restore. Moving a tab into a new window waits for it.
     @ObservationIgnored var restoreTask: Task<Void, Never>?
     @ObservationIgnored var workspaceCreatedAt = Date()
@@ -178,6 +179,7 @@ final class AppState {
             return InlineCalculator.Context(mode: self.settings.inlineCalculation,
                                             language: self.selectedBuffer?.language ?? .plain)
         }
+        fileTree.onRootChanged = { [weak self] in self?.refreshFolderLocations() }
         fileTree.onExpandedChanged = { [weak self] in self?.saveWorkspace() }
         if autoRestore { restoreTask = Task { await self.restore() } }
     }

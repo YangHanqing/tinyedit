@@ -78,13 +78,14 @@ struct SidebarView: View {
     private var tree: some View {
         let rows = appState.fileTree.rows(for: appState.folders)
         let selected = appState.selectedFilePath
-        return ScrollView(.vertical) {
+        return ScrollView([.horizontal, .vertical]) {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(rows) { row in
                     FileTreeRowView(row: row, isSelected: row.node.path == selected,
                                     unreadable: appState.fileTree.unreadable.contains(row.node.path))
                 }
             }
+            .frame(minWidth: appState.sidebarWidth)
             .padding(.vertical, 2)
         }
         .scrollIndicators(.automatic)
@@ -120,7 +121,7 @@ private struct FileTreeRowView: View {
                 .font(.system(size: 12, weight: row.rootID != nil ? .semibold : .regular))
                 .foregroundStyle(unreadable ? Color.textTertiary : Color.textPrimary)
                 .lineLimit(1)
-                .truncationMode(.middle)
+                .fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 0)
         }
         .padding(.leading, 6)
@@ -165,6 +166,7 @@ private struct FileTreeRowView: View {
         Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([node.url]) }
         if let id = row.rootID {
             Divider()
+            if unreadable { Button("Open Folder…") { appState.locateFolder(id) } }
             Button("Remove Folder from Window") { appState.removeFolder(id) }
         }
     }
@@ -198,28 +200,24 @@ struct SidebarResizeHandle: View {
     @State private var startWidth: Double?
 
     var body: some View {
-        Rectangle()
-            .fill(Color.separator)
-            .frame(width: 1)
+        Color.clear
+            .frame(width: 10)
             .frame(maxHeight: .infinity)
-            .overlay {
-                Color.clear
-                    .frame(width: 7)
-                    .contentShape(Rectangle())
-                    .onHover { inside in
-                        if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-                    }
-                    .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                        .onChanged { value in
-                            let start = startWidth ?? appState.sidebarWidth
-                            startWidth = start
-                            appState.setSidebarWidth(start + value.translation.width, save: false)
-                        }
-                        .onEnded { _ in
-                            startWidth = nil
-                            appState.setSidebarWidth(appState.sidebarWidth, save: true)
-                        })
+            .contentShape(Rectangle())
+            .overlay { Rectangle().fill(Color.separator).frame(width: 1).allowsHitTesting(false) }
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { value in
+                    let start = startWidth ?? appState.sidebarWidth
+                    startWidth = start
+                    appState.setSidebarWidth(start + value.translation.width, save: false)
+                }
+                .onEnded { _ in
+                    startWidth = nil
+                    appState.setSidebarWidth(appState.sidebarWidth, save: true)
+                })
     }
 }
 

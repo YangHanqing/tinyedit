@@ -32,6 +32,7 @@ final class FileTreeModel {
     /// Folders that could not be read (permission, gone).
     private(set) var unreadable: Set<String> = []
 
+    @ObservationIgnored var onRootChanged: (() -> Void)?
     @ObservationIgnored var onExpandedChanged: (() -> Void)?
     @ObservationIgnored private var loading: [String: UInt64] = [:]
     @ObservationIgnored private var loadToken: UInt64 = 0
@@ -60,10 +61,28 @@ final class FileTreeModel {
         watchers[path]?.stop()
         watchers[path] = nil
         let inside = { (p: String) in Self.isInside(p, root: path) }
-        for key in listings.keys where inside(key) { listings[key] = nil }
+        for key in Array(listings.keys) where inside(key) { listings[key] = nil }
+        for key in Array(loading.keys) where inside(key) { loading[key] = nil }
         expanded = expanded.filter { !inside($0) }
         unreadable = unreadable.filter { !inside($0) }
         onExpandedChanged?()
+    }
+
+    func moveRoot(_ old: String, to new: String) {
+        let expandedPaths = expanded.filter { Self.isInside($0, root: old) }
+            .map { new + $0.dropFirst(old.count) }
+        removeRoot(old)
+        watch(new)
+        expanded.formUnion(expandedPaths)
+        for path in expandedPaths { load(path) }
+        onExpandedChanged?()
+    }
+
+    func markUnavailable(_ root: String) {
+        watchers.removeValue(forKey: root)?.stop()
+        for path in Array(listings.keys) where Self.isInside(path, root: root) { listings[path] = nil }
+        for path in Array(loading.keys) where Self.isInside(path, root: root) { loading[path] = nil }
+        unreadable.insert(root)
     }
 
     func stopWatching() {
@@ -168,6 +187,7 @@ final class FileTreeModel {
         guard watchers[root] == nil else { return }
         watchers[root] = DirectoryWatcher(path: root) { [weak self] paths, rescan in
             self?.changed(paths, rescan: rescan)
+            if rescan { self?.onRootChanged?() }
         }
     }
 
