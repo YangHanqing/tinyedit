@@ -5837,6 +5837,58 @@
         }
       }
     },
+    "Not reloaded: the tab was edited while the file was being read": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not reloaded: the tab was edited while the file was being read"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未重新载入：读取文件期间标签页被编辑过"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未重新載入：讀取檔案期間標籤頁被編輯過"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再読み込みしませんでした：ファイルの読み込み中にタブが編集されました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 불러오지 않음: 파일을 읽는 동안 탭이 편집되었습니다"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht neu geladen: Der Tab wurde bearbeitet, während die Datei gelesen wurde"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non rechargé : l’onglet a été modifié pendant la lecture du fichier"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha recargado: la pestaña se editó mientras se leía el archivo"
+          }
+        }
+      }
+    },
     "Not a valid JSON string": {
       "localizations": {
         "en": {

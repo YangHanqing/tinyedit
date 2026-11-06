@@ -149,6 +149,40 @@ final class AppStateIntegrationTests: XCTestCase {
         XCTAssertEqual(s.session.buffers[id]?.conflict, ConflictState.none)
     }
 
+    /// Typing while Reload From Disk reads the file cancels the reload: replacing then would drop the edit with no undo.
+    func testEditDuringReloadIsKept() async throws {
+        let f = files.appendingPathComponent("r.txt")
+        try Data("one".utf8).write(to: f)
+        let s = await launch()
+        await s.openURLsAsync([f])
+        let id = s.session.selectedBufferID!
+        try Data("two".utf8).write(to: f)
+        let reload = Task { await s.reloadFromDisk(id) }
+        await Task.yield()                 // the reload is now reading off the main actor
+        type("+mine", into: s)
+        await reload.value
+        XCTAssertEqual(s.stores[id]?.logicalString(), "one+mine")
+        XCTAssertTrue(s.isDirtyNow(id))
+    }
+
+    /// A failed in-place save (disk full mid-write) puts the old bytes back instead of leaving a cut file.
+    func testFailedInPlaceWriteRestoresOriginal() throws {
+        let f = files.appendingPathComponent("full.txt")
+        let original = Data("sixteen bytes!!\n".utf8)
+        try original.write(to: f)
+        var calls = 0
+        XCTAssertThrowsError(try FileSaver.writeInPlace(Data("a much longer replacement text\n".utf8), at: f,
+                                                        original: original) { fh, data in
+            calls += 1
+            if calls == 1 {
+                try fh.write(contentsOf: data.prefix(1))
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            try fh.write(contentsOf: data)
+        })
+        XCTAssertEqual(try Data(contentsOf: f), original)
+    }
+
     func testExternalChangeOnDirtyBufferNeverOverwritesEvenAcrossRelaunch() async throws {
         let f = files.appendingPathComponent("d.txt")
         try Data("base".utf8).write(to: f)

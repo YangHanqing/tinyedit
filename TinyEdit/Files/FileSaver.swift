@@ -52,8 +52,10 @@ enum FileSaver {
             do {
                 // Authoritative check, inside the coordinator, immediately before bytes change.
                 let exists = fm.fileExists(atPath: dest.path)
+                var original: Data?
                 if exists {
-                    let rawNow = ContentHash.sha256Hex((try? Data(contentsOf: dest)) ?? Data())
+                    original = try? Data(contentsOf: dest)
+                    let rawNow = ContentHash.sha256Hex(original ?? Data())
                     if rawNow == payloadHash {
                         return // identical bytes already in place; acknowledge only
                     }
@@ -61,7 +63,7 @@ enum FileSaver {
                         throw FileSaveError.externalChange
                     }
                 }
-                try install(tmp: tmp, payload: payload, at: dest, exists: exists)
+                try install(tmp: tmp, payload: payload, at: dest, original: exists ? .some(original) : nil)
             } catch {
                 failure = error
             }
@@ -87,10 +89,11 @@ enum FileSaver {
     /// Replace via the container temp. If the sandbox grants the file but not its directory and the
     /// replace is refused, fall back to an in-place write, which keeps inode, mode, xattrs and ACLs.
     /// Atomicity across volumes is best effort: `replaceItemAt` may copy.
-    private static func install(tmp: URL, payload: Data, at dest: URL, exists: Bool) throws {
+    /// `original` is nil when the file does not exist, `.some(nil)` when it exists but could not be read.
+    private static func install(tmp: URL, payload: Data, at dest: URL, original: Data??) throws {
         let fm = FileManager.default
         do {
-            if exists {
+            if original != nil {
                 _ = try fm.replaceItemAt(dest, withItemAt: tmp)
             } else {
                 try fm.copyItem(at: tmp, to: dest)
@@ -99,14 +102,41 @@ enum FileSaver {
         } catch {
             Log.files.error("replace failed (\((error as NSError).domain, privacy: .public) \((error as NSError).code)); trying in-place write")
         }
-        do {
-            if !exists { guard fm.createFile(atPath: dest.path, contents: nil) else { throw FileSaveError.couldNotSaveFile } }
+        switch original {
+        case nil:
+            guard fm.createFile(atPath: dest.path, contents: nil) else { throw FileSaveError.couldNotSaveFile }
+            do {
+                try writeInPlace(payload, at: dest, original: Data())
+            } catch {
+                try? fm.removeItem(at: dest) // only the empty file this save created
+                throw error
+            }
+        case .some(nil):
+            // Without the old bytes a failed write could not be undone, so the file is left alone.
+            throw FileSaveError.couldNotSaveFile
+        case .some(let bytes?):
+            try writeInPlace(payload, at: dest, original: bytes)
+        }
+    }
+
+    /// Overwrites `dest` from offset 0 and only then truncates, so no block is freed before the new bytes are
+    /// down. If any step fails (disk full, quota, I/O), `original` is written back the same way, which needs
+    /// no more space than the file already holds, and the save fails with the file as it was.
+    static func writeInPlace(_ payload: Data, at dest: URL, original: Data,
+                             write: (FileHandle, Data) throws -> Void = { try $0.write(contentsOf: $1) }) throws {
+        func put(_ data: Data) throws {
             let fh = try FileHandle(forWritingTo: dest)
             defer { try? fh.close() }
-            try fh.truncate(atOffset: 0)
-            try fh.write(contentsOf: payload)
+            try fh.seek(toOffset: 0)
+            try write(fh, data)
+            try fh.truncate(atOffset: UInt64(data.count))
             try fh.synchronize()
+        }
+        do {
+            try put(payload)
         } catch {
+            Log.files.error("in-place write failed; restoring the previous bytes")
+            do { try put(original) } catch { Log.files.fault("could not restore the previous bytes") }
             throw FileSaveError.couldNotSaveFile
         }
     }

@@ -318,6 +318,8 @@ extension AppState {
             alert.buttons[0].hasDestructiveAction = true
             guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
+        guard let store = stores[id] else { return }
+        let gen = store.generation
         let loaded = await Task.detached(priority: .userInitiated) {
             try? FileLoader.load(from: url, decoding: .force(encoding))
         }.value
@@ -326,6 +328,7 @@ extension AppState {
             showToast(String(localized: "Could not read the file as \(encoding.statusLabel)"), error: true)
             return
         }
+        guard textUnchanged(id, store: store, since: gen) else { return }
         await applyDiskVersion(loaded, to: id, markChanges: false)
     }
 

@@ -146,13 +146,25 @@ extension AppState {
     }
 
     func reloadFromDisk(_ id: UUID) async {
-        guard let url = fileURLs[id], let encoding = session.buffers[id]?.encoding else { return }
+        guard let url = fileURLs[id], let encoding = session.buffers[id]?.encoding, let store = stores[id] else { return }
+        let gen = store.generation
         let loaded = await Task.detached(priority: .userInitiated) { try? FileLoader.load(from: url, decoding: .prefer(encoding)) }.value
         guard let loaded else {
             showToast(String(localized: "Could not open file"), error: true)
             return
         }
+        guard textUnchanged(id, store: store, since: gen) else { return }
         await applyDiskVersion(loaded, to: id)
+    }
+
+    /// A reload replaces the text without undo, so it applies only to the text the user agreed to replace:
+    /// an edit made while the file was being read cancels it. Checked right before `applyDiskVersion`,
+    /// whose replacement happens before its first `await`.
+    func textUnchanged(_ id: UUID, store: BufferTextStore, since gen: UInt64) -> Bool {
+        guard session.buffers[id] != nil, stores[id] === store else { return false }
+        if store.generation == gen { return true }
+        showToast(String(localized: "Not reloaded: the tab was edited while the file was being read"), error: true)
+        return false
     }
 
     /// In-session rebind for a live buffer whose bookmark failed. Never replaces the text.
