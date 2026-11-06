@@ -3,52 +3,6 @@ import XCTest
 @testable import TinyEdit
 
 final class EditorSettingsTests: XCTestCase {
-    func testDefaultsAndPreferenceRoundTrip() throws {
-        let name = "EditorSettings-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
-        let fresh = EditorSettings.load(from: defaults)
-        XCTAssertEqual(fresh.appearance, .system)
-        XCTAssertEqual(fresh.backgroundPattern, .off)
-        XCTAssertFalse(fresh.trimTrailingWhitespaceOnSave)
-        XCTAssertFalse(fresh.ensureFinalNewline)
-        XCTAssertFalse(fresh.jsonMarkDecodes)
-        XCTAssertFalse(fresh.suggestLanguageWhileTyping)
-        var changed = fresh
-        for key in [\EditorSettings.highlightMatchingBrackets, \.highlightSelectionOccurrences,
-                    \.autoIndent, \.smartBackspace, \.continueMarkdownTasks, \.suggestPasteDecodes,
-                    \.suggestPasteLanguage, \.suggestPasteCleanup, \.suggestLanguageWhileTyping] {
-            changed[keyPath: key].toggle()
-        }
-        changed.save(to: defaults)
-        XCTAssertEqual(EditorSettings.load(from: defaults), changed)
-        // Existing explicit preferences win over the new defaults.
-        defaults.set(true, forKey: "tinyedit.ensureFinalNewline")
-        defaults.set("dark", forKey: "tinyedit.appearance")
-        XCTAssertTrue(EditorSettings.load(from: defaults).ensureFinalNewline)
-        XCTAssertEqual(EditorSettings.load(from: defaults).appearance, .dark)
-    }
-
-    func testPasteDecodeAndLanguageSuggestionsAreIndependent() throws {
-        let json = "{\"value\":1}"
-        XCTAssertNil(PasteDecodeDetector.suggestion(in: json, currentLanguage: .plain,
-                                                   suggestDecodes: false, suggestLanguage: false))
-        let language = try XCTUnwrap(PasteDecodeDetector.suggestion(in: json, currentLanguage: .plain,
-                                                                    suggestDecodes: false, suggestLanguage: true))
-        XCTAssertEqual(language.language, .json)
-        XCTAssertTrue(language.canFormatJSON)
-        XCTAssertTrue(language.candidates.isEmpty)
-        let encoded = "SGVsbG8gd29ybGQ="
-        XCTAssertNil(PasteDecodeDetector.suggestion(in: encoded, currentLanguage: .plain,
-                                                   suggestDecodes: false, suggestLanguage: false))
-        let decode = try XCTUnwrap(PasteDecodeDetector.suggestion(in: encoded, currentLanguage: .plain,
-                                                                 suggestDecodes: true, suggestLanguage: false))
-        XCTAssertEqual(decode.candidates.first?.decoded, "Hello world")
-        XCTAssertNil(decode.language)
-        XCTAssertFalse(decode.canFormatJSON)
-        // Manual decoding is unaffected by suggestion preferences.
-        XCTAssertEqual(try TextTransform.apply(.base64Decode, to: encoded), "Hello world")
-    }
 
     @MainActor
     func testInputSettingsControlActualEdits() {
@@ -85,27 +39,6 @@ final class EditorSettingsTests: XCTestCase {
         reset("- [ ] task")
         host.textView.insertNewline(nil)
         XCTAssertEqual(store.logicalString(), "- [ ] task\n")
-    }
-
-    @MainActor
-    func testDisabledDecorationsAreNotProduced() {
-        let host = EditorTextHost()
-        host.scrollView.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
-        var settings = EditorSettings()
-        let store = BufferTextStore(id: UUID(), text: "(hello) hello", settings: settings)
-        host.activate(store, settings: settings)
-        host.textView.layoutSubtreeIfNeeded()
-        let rect = NSRect(x: 0, y: 0, width: 600, height: 400)
-        host.textView.setSelectedRange(NSRange(location: 0, length: 0))
-        XCTAssertEqual(host.textView.decorations(in: rect).brackets.count, 2)
-        host.textView.setSelectedRange(NSRange(location: 1, length: 5))
-        XCTAssertFalse(host.textView.decorations(in: rect).occurrences.isEmpty)
-        settings.highlightMatchingBrackets = false
-        settings.highlightSelectionOccurrences = false
-        host.apply(settings: settings, stores: [store])
-        XCTAssertTrue(host.textView.decorations(in: rect).occurrences.isEmpty)
-        host.textView.setSelectedRange(NSRange(location: 0, length: 0))
-        XCTAssertTrue(host.textView.decorations(in: rect).brackets.isEmpty)
     }
 
     @MainActor

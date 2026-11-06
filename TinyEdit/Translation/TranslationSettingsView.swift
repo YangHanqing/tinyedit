@@ -28,7 +28,7 @@ struct TranslationSettingsView: View {
                 Text("Translate into your preferred language. When the original is already in that language, use your second language.")
                     .font(.caption).foregroundStyle(Color.textSecondary)
                 Picker("Default Engine", selection: $preferences.engine) {
-                    ForEach(TranslationEngine.allCases) { Text($0.title).tag($0) }
+                    ForEach(TranslationEngine.available) { Text($0.title).tag($0) }
                 }
             }
             if preferences.engine == .custom { modelSettings }

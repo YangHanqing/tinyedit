@@ -6,6 +6,12 @@ struct TinyEditApp: App {
     @State private var appState = AppState.shared
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        // No system window restoration (the session restores tabs); together with `isRestorable = false` on
+        // every editor window. Works on macOS 14, where SwiftUI's `restorationBehavior` does not exist.
+        UserDefaults.standard.register(defaults: ["NSQuitAlwaysKeepsWindows": false])
+    }
+
     var body: some Scene {
         // The main window. Other editor windows are AppKit windows made by `Workspaces`.
         Window("TinyEdit", id: "main") {
@@ -20,7 +26,6 @@ struct TinyEditApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
-        .restorationBehavior(.disabled)
         .defaultSize(WindowSize.load(visible: NSScreen.main?.visibleFrame.size))
         .commands { AppCommands() }
 

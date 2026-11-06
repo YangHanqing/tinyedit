@@ -245,7 +245,7 @@ private struct SidebarResizeHandle: NSViewRepresentable {
         override var mouseDownCanMoveWindow: Bool { false }
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-        override func resetCursorRects() { addCursorRect(bounds, cursor: .columnResize) }
+        override func resetCursorRects() { addCursorRect(bounds, cursor: Self.resizeCursor) }
 
         override func updateTrackingAreas() {
             super.updateTrackingAreas()
@@ -254,7 +254,7 @@ private struct SidebarResizeHandle: NSViewRepresentable {
                                            owner: self, userInfo: nil))
         }
 
-        override func cursorUpdate(with event: NSEvent) { NSCursor.columnResize.set() }
+        override func cursorUpdate(with event: NSEvent) { Self.resizeCursor.set() }
 
         override func mouseDown(with event: NSEvent) {
             guard let window, let appState else { return }
@@ -269,7 +269,7 @@ private struct SidebarResizeHandle: NSViewRepresentable {
             let startShown = SidebarLayout.shownWidth(stored: startWidth, windowWidth: windowWidth(),
                                                       editorMinWidth: appState.editorMinWidth)
             window.disableCursorRects()
-            NSCursor.columnResize.set()
+            Self.resizeCursor.set()
             window.trackEvents(matching: [.leftMouseDragged, .leftMouseUp], timeout: NSEvent.foreverDuration,
                                mode: .eventTracking) { event, stop in
                 guard let event, event.type == .leftMouseDragged else {
@@ -284,12 +284,23 @@ private struct SidebarResizeHandle: NSViewRepresentable {
             appState.endSidebarDrag(startWidth: startWidth, wasVisible: wasVisible)
         }
 
+        private static var resizeCursor: NSCursor {
+            if #available(macOS 15, *) { .columnResize } else { .resizeLeftRight }
+        }
+
         /// One-way arrows at a limit, as `NSSplitView` shows them.
         private static func cursor(for drag: SidebarLayout.Drag) -> NSCursor {
+            guard #available(macOS 15, *) else {
+                switch drag {
+                case .collapse, .width(_, limited: .min): return .resizeRight
+                case .width(_, limited: .max): return .resizeLeft
+                case .width(_, limited: nil): return .resizeLeftRight
+                }
+            }
             switch drag {
-            case .collapse, .width(_, limited: .min): .columnResize(directions: .right)
-            case .width(_, limited: .max): .columnResize(directions: .left)
-            case .width(_, limited: nil): .columnResize
+            case .collapse, .width(_, limited: .min): return .columnResize(directions: .right)
+            case .width(_, limited: .max): return .columnResize(directions: .left)
+            case .width(_, limited: nil): return .columnResize
             }
         }
     }

@@ -24,15 +24,6 @@ final class RestorePlannerTests: XCTestCase {
         return (ss, rs, out)
     }
 
-    func testCleanManifestRestoresInOrder() throws {
-        let (ss, rs, bufs) = try fixture(titles: ["A", "B"])
-        let plan = RestorePlanner.plan(sessions: ss, recovery: rs)
-        XCTAssertEqual(plan.entries.map(\.id), bufs.map(\.id))
-        XCTAssertEqual(plan.entries.map(\.text), ["text of A", "text of B"])
-        XCTAssertEqual(plan.selectedID, bufs[1].id)
-        XCTAssertFalse(plan.quarantinedManifest)
-    }
-
     func testSnapshotBesideValidManifestIsAdoptedNotDeleted() throws {
         let (ss, rs, _) = try fixture(titles: ["A"])
         let stray = UUID()

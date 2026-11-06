@@ -2,7 +2,7 @@ name: TinyEdit
 options:
   bundleIdPrefix: cn.hqyang
   deploymentTarget:
-    macOS: "15.0"
+    macOS: "14.0"
   developmentRegion: en
   knownRegions:
     - en
@@ -18,7 +18,7 @@ settings:
   base:
     # Shared by the app and its Quick Look extension, which must carry the same version.
     # The patch number goes up with each feature.
-    MARKETING_VERSION: "0.4.5"
+    MARKETING_VERSION: "0.4.6"
     # yyyyMMddHHmm. scripts/install.sh stamps the minute it builds.
     CURRENT_PROJECT_VERSION: "202611070055"
     SWIFT_VERSION: "5.0"
@@ -27,7 +27,7 @@ settings:
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
     # Universal: Apple silicon and Intel in one app.
     ARCHS: "$(ARCHS_STANDARD)"
-    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
     ENABLE_HARDENED_RUNTIME: YES
     CODE_SIGN_IDENTITY: "-"
     CODE_SIGN_STYLE: Manual

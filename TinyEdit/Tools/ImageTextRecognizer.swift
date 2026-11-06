@@ -44,6 +44,7 @@ enum ImageTextRecognizer {
             }
             return (lines, tables)
         }
+        guard #available(macOS 15, *) else { return (try legacyLines(image, size: size, languageCorrection: languageCorrection), []) }
         var request = RecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = languageCorrection
@@ -55,6 +56,27 @@ enum ImageTextRecognizer {
             }
         }
         return (lines, [])
+    }
+
+    /// macOS 14: the same line recognizer through the older `VNRecognizeTextRequest`.
+    private static func legacyLines(_ image: CGImage, size: CGSize, languageCorrection: Bool) throws -> [ImageTextLayout.Line] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = languageCorrection
+        request.automaticallyDetectsLanguage = true
+        let supported = ((try? request.supportedRecognitionLanguages()) ?? []).map { ($0, Locale.Language(identifier: $0)) }
+        request.recognitionLanguages = languages(supported: supported.map(\.1)).compactMap { wanted in
+            supported.first { $0.1 == wanted }?.0
+        }
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        return (request.results ?? []).compactMap { observation in
+            observation.topCandidates(1).first.map {
+                let box = observation.boundingBox   // normalized, lower-left origin
+                let rect = CGRect(x: box.minX * size.width, y: (1 - box.maxY) * size.height,
+                                  width: box.width * size.width, height: box.height * size.height)
+                return ImageTextLayout.Line(text: $0.string, rect: rect)
+            }
+        }
     }
 
     /// Upright (EXIF orientation applied) and no larger than `maxPixelSize`. Nil when ImageIO cannot read it.

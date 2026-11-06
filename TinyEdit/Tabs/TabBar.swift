@@ -3,18 +3,26 @@ import SwiftUI
 
 /// The tab strip. Tabs share the width (`TabStripLayout`); when they no longer fit the strip scrolls,
 /// keeps the selected tab in view, fades the clipped edge, takes vertical wheel scrolling as horizontal,
-/// and shows the All Tabs menu.
+/// and shows the All Tabs menu. macOS 14 (no scroll geometry) reveals the selected tab with
+/// `ScrollViewReader` and has no edge fades or wheel mapping.
 struct TabBar: View {
     @Environment(AppState.self) private var appState
     @State private var renamingID: UUID?
-    @State private var position = ScrollPosition(edge: .leading)
+    @State private var scrollRequest: ScrollRequest?
     @State private var scroll = ScrollMetrics()
     @State private var stripWidth: CGFloat = 0
     @State private var wheel = WheelTarget()
 
-    private struct ScrollMetrics: Equatable {
+    fileprivate struct ScrollMetrics: Equatable {
         var offset: CGFloat = 0
         var viewport: CGFloat = 0
+    }
+
+    /// An offset for `TrackedTabScroll` to scroll to; `serial` makes a repeat of the same offset count.
+    fileprivate struct ScrollRequest: Equatable {
+        var x: CGFloat
+        var animated: Bool
+        var serial: Int
     }
 
     /// Where a burst of wheel events is heading. The scroll geometry reports back a frame late, so
@@ -29,34 +37,34 @@ struct TabBar: View {
         let layout = layout(for: buffers)
         let overflowing = stripWidth > 0 && layout.overflows(stripWidth)
         HStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: TabStripLayout.spacing) {
-                    ForEach(Array(buffers.enumerated()), id: \.element.id) { index, buffer in
-                        TabItem(buffer: buffer,
-                                isSelected: buffer.id == appState.session.selectedBufferID,
-                                width: layout.width(at: index),
-                                onSelect: { appState.selectTab(buffer.id) },
-                                onClose: { appState.closeTab(buffer.id) },
-                                isRenaming: renamingID == buffer.id,
-                                onRename: { finishRename(buffer.id, name: $0) })
-                            .contextMenu { menu(for: buffer) }
-                            .background(TabDragSource(id: buffer.id, title: buffer.displayTitle, enabled: renamingID != buffer.id))
-                            .onDrop(of: [TabDrag.type], isTargeted: nil) { _ in dropTab(before: buffer.id) }
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: TabStripLayout.spacing) {
+                        ForEach(Array(buffers.enumerated()), id: \.element.id) { index, buffer in
+                            TabItem(buffer: buffer,
+                                    isSelected: buffer.id == appState.session.selectedBufferID,
+                                    width: layout.width(at: index),
+                                    onSelect: { appState.selectTab(buffer.id) },
+                                    onClose: { appState.closeTab(buffer.id) },
+                                    isRenaming: renamingID == buffer.id,
+                                    onRename: { finishRename(buffer.id, name: $0) })
+                                .contextMenu { menu(for: buffer) }
+                                .background(TabDragSource(id: buffer.id, title: buffer.displayTitle, enabled: renamingID != buffer.id))
+                                .onDrop(of: [TabDrag.type], isTargeted: nil) { _ in dropTab(before: buffer.id) }
+                        }
                     }
+                    .padding(.horizontal, TabStripLayout.padding)
                 }
-                .padding(.horizontal, TabStripLayout.padding)
+                // Past the last tab: the dragged tab goes last.
+                .onDrop(of: [TabDrag.type], isTargeted: nil) { _ in dropTab(before: nil) }
+                .modifier(TrackedTabScroll(request: scrollRequest, metrics: $scroll))
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stripWidth = $0 }
+                .overlay { edgeFades(layout) }
+                .background(VerticalWheelCatcher { delta in scrollByWheel(delta, layout: layout, enabled: overflowing) })
+                .onChange(of: appState.session.selectedBufferID) { _, _ in revealSelected(animated: true, proxy: proxy) }
+                .onChange(of: appState.session.tabOrder.count) { _, _ in revealSelected(animated: true, proxy: proxy) }
+                .onChange(of: stripWidth) { _, _ in revealSelected(animated: false, proxy: proxy) }
             }
-            // Past the last tab: the dragged tab goes last.
-            .onDrop(of: [TabDrag.type], isTargeted: nil) { _ in dropTab(before: nil) }
-            .scrollPosition($position)
-            .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
-                ScrollMetrics(offset: geometry.contentOffset.x, viewport: geometry.containerSize.width)
-            } action: { _, new in
-                scroll = new
-            }
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stripWidth = $0 }
-            .overlay { edgeFades(layout) }
-            .background(VerticalWheelCatcher { delta in scrollByWheel(delta, layout: layout, enabled: overflowing) })
             if overflowing {
                 AllTabsMenu(buffers: buffers)
             }
@@ -72,9 +80,6 @@ struct TabBar: View {
         }
         .frame(height: 32)
         .background(Color.chromeBackground)
-        .onChange(of: appState.session.selectedBufferID) { _, _ in revealSelected(animated: true) }
-        .onChange(of: appState.session.tabOrder.count) { _, _ in revealSelected(animated: true) }
-        .onChange(of: stripWidth) { _, _ in revealSelected(animated: false) }
     }
 
     /// A tab from this window is reordered; one from another window moves here.
@@ -94,36 +99,47 @@ struct TabBar: View {
     }
 
     /// New, reopened, restored or chosen from the menu: the selected tab scrolls into view, by as little as it takes.
-    private func revealSelected(animated: Bool) {
+    private func revealSelected(animated: Bool, proxy: ScrollViewProxy) {
         let buffers = appState.session.orderedBuffers
-        guard stripWidth > 0, let index = buffers.firstIndex(where: { $0.id == appState.session.selectedBufferID }) else { return }
+        guard stripWidth > 0, let id = appState.session.selectedBufferID,
+              let index = buffers.firstIndex(where: { $0.id == id }) else { return }
         let layout = layout(for: buffers)
         // The new widths are laid out before the scroll, or a tab added at the end is not there yet.
         DispatchQueue.main.async {
-            guard let x = layout.offset(revealing: index, from: scroll.offset, viewport: stripWidth) else { return }
-            if animated {
-                withAnimation(.easeOut(duration: 0.15)) { position.scrollTo(x: x) }
-            } else {
-                position.scrollTo(x: x)
+            guard #available(macOS 15, *) else {
+                if animated {
+                    withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) }
+                } else {
+                    proxy.scrollTo(id)
+                }
+                return
             }
+            guard let x = layout.offset(revealing: index, from: scroll.offset, viewport: stripWidth) else { return }
+            requestScroll(to: x, animated: animated)
         }
+    }
+
+    private func requestScroll(to x: CGFloat, animated: Bool) {
+        scrollRequest = ScrollRequest(x: x, animated: animated, serial: (scrollRequest?.serial ?? 0) + 1)
     }
 
     /// A mouse wheel only scrolls vertically; over the strip that moves the tabs sideways.
     private func scrollByWheel(_ delta: CGFloat, layout: TabStripLayout, enabled: Bool) -> Bool {
         guard enabled else { return false }
+        guard #available(macOS 15, *) else { return false }
         let now = ProcessInfo.processInfo.systemUptime
         let base = now - wheel.time < 0.3 ? wheel.x : scroll.offset
         let x = layout.clampOffset(base - delta, viewport: stripWidth)
         wheel.x = x
         wheel.time = now
-        position.scrollTo(x: x)
+        requestScroll(to: x, animated: false)
         return true
     }
 
     @ViewBuilder private func edgeFades(_ layout: TabStripLayout) -> some View {
-        let leading = scroll.offset > 1
-        let trailing = scroll.offset + scroll.viewport < layout.contentWidth - 1
+        // Metrics stay zero on macOS 14, which has no fades.
+        let leading = scroll.viewport > 0 && scroll.offset > 1
+        let trailing = scroll.viewport > 0 && scroll.offset + scroll.viewport < layout.contentWidth - 1
         HStack(spacing: 0) {
             if leading { fade(toward: .leading) }
             Spacer(minLength: 0)
@@ -246,6 +262,45 @@ enum TabMenuTitles {
 
 /// Reports vertical scroll-wheel movement over its area, in points (positive is up), and swallows the
 /// event when the handler takes it. Horizontal swipes pass through to the scroll view.
+/// macOS 15: the strip's offset is tracked (fades, minimal reveal, wheel) and set from `request`.
+private struct TrackedTabScroll: ViewModifier {
+    let request: TabBar.ScrollRequest?
+    @Binding var metrics: TabBar.ScrollMetrics
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) {
+            content.modifier(Tracking(request: request, metrics: $metrics))
+        } else {
+            content
+        }
+    }
+
+    @available(macOS 15, *)
+    private struct Tracking: ViewModifier {
+        let request: TabBar.ScrollRequest?
+        @Binding var metrics: TabBar.ScrollMetrics
+        @State private var position = ScrollPosition(edge: .leading)
+
+        func body(content: Content) -> some View {
+            content
+                .scrollPosition($position)
+                .onScrollGeometryChange(for: TabBar.ScrollMetrics.self) { geometry in
+                    TabBar.ScrollMetrics(offset: geometry.contentOffset.x, viewport: geometry.containerSize.width)
+                } action: { _, new in
+                    metrics = new
+                }
+                .onChange(of: request) { _, request in
+                    guard let request else { return }
+                    if request.animated {
+                        withAnimation(.easeOut(duration: 0.15)) { position.scrollTo(x: request.x) }
+                    } else {
+                        position.scrollTo(x: request.x)
+                    }
+                }
+        }
+    }
+}
+
 private struct VerticalWheelCatcher: NSViewRepresentable {
     let onScroll: (CGFloat) -> Bool
 

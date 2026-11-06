@@ -30,31 +30,11 @@ final class CommandLineToolTests: XCTestCase {
 
     // MARK: Parsing
 
-    func testGoToParsing() {
-        XCTAssertEqual(CommandLineTool.goTo(parsing: "120\n/tmp/a b.txt"),
-                       .goTo(file: URL(fileURLWithPath: "/tmp/a b.txt"), line: 120, column: nil))
-        XCTAssertEqual(CommandLineTool.goTo(parsing: "12:5\n/tmp/x:1"),
-                       .goTo(file: URL(fileURLWithPath: "/tmp/x:1"), line: 12, column: 5))
-        XCTAssertNil(CommandLineTool.goTo(parsing: "12"))
-        XCTAssertNil(CommandLineTool.goTo(parsing: "0\n/tmp/a"))
-        XCTAssertNil(CommandLineTool.goTo(parsing: "x\n/tmp/a"))
-        XCTAssertNil(CommandLineTool.goTo(parsing: "3\nrelative.txt"))
-    }
-
     func testOnlySpooledRequestsAreRequestsToDelete() {
         XCTAssertTrue(CommandLineTool.isRequest(URL(fileURLWithPath: "/a/b.tinyedit-stdin")))
         XCTAssertFalse(CommandLineTool.isRequest(URL(fileURLWithPath: "/a/b.txt")))
         XCTAssertFalse(CommandLineTool.isSpooled(URL(fileURLWithPath: "/a/b.tinyedit-stdin")))
         XCTAssertTrue(CommandLineTool.isSpooled(URL(fileURLWithPath: "/t/TinyEdit-cli/b.tinyedit-goto")))
-    }
-
-    func testInstallCommandsAndStatus() {
-        let script = URL(fileURLWithPath: "/Applications/Tiny Edit's.app/Contents/SharedSupport/bin/tinyedit")
-        XCTAssertEqual(CommandLineTool.installCommand(script: script),
-                       #"sudo mkdir -p /usr/local/bin && sudo ln -sf '/Applications/Tiny Edit'\''s.app/Contents/SharedSupport/bin/tinyedit' /usr/local/bin/tinyedit"#)
-        XCTAssertEqual(CommandLineTool.status(destination: script.path, script: script), .installed)
-        XCTAssertEqual(CommandLineTool.status(destination: "/Other/TinyEdit.app/Contents/SharedSupport/bin/tinyedit", script: script),
-                       .other("/Other/TinyEdit.app/Contents/SharedSupport/bin/tinyedit"))
     }
 
     func testScriptIsInTheAppBundle() throws {

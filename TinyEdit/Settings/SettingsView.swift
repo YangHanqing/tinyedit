@@ -9,21 +9,16 @@ struct SettingsView: View {
 
     var body: some View {
         TabView(selection: $pane) {
-            Tab("General", systemImage: "gearshape", value: .general) {
-                GeneralSettingsPane().settingsPane(height: 560)
-            }
-            Tab("Editor", systemImage: "character.cursor.ibeam", value: .editor) {
-                EditorSettingsPane().settingsPane(height: 560)
-            }
-            Tab("Default App", systemImage: "doc.text", value: .defaultApp) {
-                DefaultAppSettingsPane().settingsPane(height: 600)
-            }
-            Tab("Translation", systemImage: "character.bubble", value: .translation) {
-                TranslationSettingsView().settingsPane(height: 600)
-            }
-            Tab("Shortcuts", systemImage: "keyboard", value: .shortcuts) {
-                ShortcutsSettingsPane().settingsPane(height: 600)
-            }
+            GeneralSettingsPane().settingsPane(height: 560)
+                .tabItem { Label("General", systemImage: "gearshape") }.tag(Pane.general)
+            EditorSettingsPane().settingsPane(height: 560)
+                .tabItem { Label("Editor", systemImage: "character.cursor.ibeam") }.tag(Pane.editor)
+            DefaultAppSettingsPane().settingsPane(height: 600)
+                .tabItem { Label("Default App", systemImage: "doc.text") }.tag(Pane.defaultApp)
+            TranslationSettingsView().settingsPane(height: 600)
+                .tabItem { Label("Translation", systemImage: "character.bubble") }.tag(Pane.translation)
+            ShortcutsSettingsPane().settingsPane(height: 600)
+                .tabItem { Label("Shortcuts", systemImage: "keyboard") }.tag(Pane.shortcuts)
         }
         .onAppear { pane = .general }
         .onDisappear { pane = .general }

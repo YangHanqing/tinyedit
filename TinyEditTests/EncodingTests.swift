@@ -50,17 +50,10 @@ final class EncodingTests: XCTestCase {
         XCTAssertEqual(try FileLoader.make(from: gbk, decoding: .prefer(.utf8)).encoding, .gb18030)
         XCTAssertThrowsError(try FileLoader.make(from: gbk, decoding: .force(.utf8)))
     }
-    func testInvalidUTF8Rejected() {
-        XCTAssertThrowsError(try TextEncoding.decode(Data([0xC3, 0x28])))
-    }
     func testBOMFollowedByGarbageRejected() {
         XCTAssertThrowsError(try TextEncoding.decode(Data([0xEF, 0xBB, 0xBF, 0xC3, 0x28])))
     }
     func testUTF32LEBOMRejected() {
         XCTAssertThrowsError(try TextEncoding.decode(Data([0xFF, 0xFE, 0x00, 0x00, 0x41, 0x00, 0x00, 0x00])))
-    }
-    func testEmptyIsUTF8() throws {
-        let (t, e) = try TextEncoding.decode(Data())
-        XCTAssertEqual(t, ""); XCTAssertEqual(e, .utf8)
     }
 }

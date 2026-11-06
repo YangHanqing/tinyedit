@@ -69,7 +69,7 @@ struct TranslationView: View {
         .foregroundStyle(Color.textPrimary)
         .background(Color.chromeBackground)
         .background {
-            if let job = appleJob, let run {
+            if #available(macOS 15, *), let job = appleJob, let run {
                 AppleTranslationOperation(run: run, jobID: job.id, source: job.source, target: job.target).id(job.id)
             }
         }
@@ -314,6 +314,7 @@ struct TranslationView: View {
     }
 }
 
+@available(macOS 15, *)
 private struct AppleTranslationOperation: View {
     let run: TranslationRun
     let jobID: UUID

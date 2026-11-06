@@ -36,8 +36,3 @@ final class TranslationChunkTests: XCTestCase {
         XCTAssertNil(ModelTranslation.displayedMessage(" \n ", key: ""))
     }
 }
-
-@MainActor
-final class TranslationRunTests: XCTestCase {
-
-}

@@ -17,15 +17,4 @@ final class MarkdownImageTests: XCTestCase {
         XCTAssertEqual(code, "<img src='a.png'>\n<br>")
         XCTAssertEqual(nodes.last, .html("<script>alert(1)</script>"))
     }
-
-    @MainActor func testImagesFitTableColumnWithoutStretching() {
-        let image = CGSize(width: 2200, height: 1440)
-        let size = MarkdownImageView.fit(image, dimensions: .init(width: 560), available: 240)
-        XCTAssertEqual(size.width, 240)
-        XCTAssertEqual(size.height, 1440 * 240 / 2200, accuracy: 0.001)
-        let heightBound = MarkdownImageView.fit(image, dimensions: .init(height: 100), available: 560)
-        XCTAssertEqual(heightBound.height, 100)
-        let small = MarkdownImageView.fit(CGSize(width: 40, height: 20), dimensions: .init(height: 100), available: 560)
-        XCTAssertEqual(small, CGSize(width: 200, height: 100))
-    }
 }

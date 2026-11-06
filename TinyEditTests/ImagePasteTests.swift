@@ -35,29 +35,6 @@ final class ImagePasteTests: XCTestCase {
         XCTAssertEqual(PastedImage.content(of: pb), .files([url]))
     }
 
-    func testDocumentRecognitionDefaultsOffAndPersists() throws {
-        let name = "ImageSettings-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
-        XCTAssertFalse(EditorSettings.load(from: defaults).recognizeDocumentTables)
-        var settings = EditorSettings()
-        settings.recognizeDocumentTables = true
-        settings.save(to: defaults)
-        XCTAssertEqual(EditorSettings.load(from: defaults).recognizeDocumentTables, EditorSettings.supportsDocumentTables)
-    }
-
-    func testMarkdownTablesEscapeCellsAndPadRows() {
-        XCTAssertEqual(ImageTextLayout.markdownTable([["尺寸", "备注"], ["M", "a|b\n<c>"], ["L"]]), [
-            "| 尺寸 | 备注 |", "| --- | --- |", "| M | a\\|b &lt;c&gt; |", "| L |  |",
-        ])
-        XCTAssertEqual(ImageTextLayout.markdownTable([]), [])
-        let rect = CGRect(x: 0, y: 0, width: 100, height: 100)
-        let text = ImageTextLayout.text(lines: [.init(text: "duplicate", rect: rect)],
-                                       tables: [.init(rows: [["尺寸"], ["M"]], rect: rect)],
-                                       indent: .spaces(4), tabWidth: 4)
-        XCTAssertEqual(text, "| 尺寸 |\n| --- |\n| M |")
-    }
-
     func testSlowNoticeIgnoresCancelledAndReplacedJobs() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

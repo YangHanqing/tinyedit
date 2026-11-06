@@ -5,6 +5,12 @@ import Translation
 enum TranslationEngine: String, CaseIterable, Identifiable, Equatable {
     case apple, custom
     var id: String { rawValue }
+
+    /// Apple Translation (the Translation framework) needs macOS 15; macOS 14 offers only the custom model.
+    static var available: [Self] {
+        if #available(macOS 15, *) { allCases } else { [.custom] }
+    }
+
     var title: String {
         switch self {
         case .apple: String(localized: "Apple Translation")
@@ -65,6 +71,7 @@ struct TranslationPreferences: Equatable {
     static func load(from defaults: UserDefaults = .standard) -> Self {
         var p = Self()
         p.engine = TranslationEngine(rawValue: defaults.string(forKey: "translation.engine") ?? "") ?? .apple
+        if !TranslationEngine.available.contains(p.engine) { p.engine = .custom }
         p.primary = defaults.string(forKey: "translation.primary") ?? ""
         p.secondary = defaults.string(forKey: "translation.secondary") ?? ""
         p.endpoint = defaults.string(forKey: "translation.endpoint") ?? ""
@@ -146,7 +153,10 @@ enum TranslationLanguages {
     }
 
     static func choices(extra: [String] = []) async -> [String] {
-        let apple = await LanguageAvailability().supportedLanguages.map { canonical($0.minimalIdentifier) }
+        var apple: [String] = []
+        if #available(macOS 15, *) {
+            apple = await LanguageAvailability().supportedLanguages.map { canonical($0.minimalIdentifier) }
+        }
         let common = ["en", "zh-Hans", "zh-Hant", "ko", "ja", "de", "fr", "es", "it", "pt", "ru", "ar", "hi", "th", "vi", "id", "nl", "pl", "tr", "uk"]
         return Set(apple + common + systemPreferences.map(canonical) + extra.filter { !$0.isEmpty })
             .sorted { name($0).localizedStandardCompare(name($1)) == .orderedAscending }
