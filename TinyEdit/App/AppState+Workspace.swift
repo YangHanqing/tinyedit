@@ -231,6 +231,36 @@ extension AppState {
         if save { saveWorkspace() }
     }
 
+    /// The narrowest the editor side may get: the editor, and the preview beside it when it shows.
+    var editorMinWidth: Double { SidebarLayout.paneMinWidth * (previewVisible ? 2 : 1) }
+
+    /// One step of a divider drag. Dragging under `SidebarLayout.collapseBelow` hides the sidebar, and dragging
+    /// back out in the same drag shows it again.
+    @discardableResult
+    func dragSidebar(to proposed: Double, windowWidth: Double) -> SidebarLayout.Drag {
+        let result = SidebarLayout.drag(proposed: proposed, windowWidth: windowWidth, editorMinWidth: editorMinWidth)
+        switch result {
+        case .collapse:
+            if sidebarVisible { sidebarVisible = false }
+        case .width(let width, _):
+            if !sidebarVisible { sidebarVisible = true }
+            if width != sidebarWidth { sidebarWidth = width }
+        }
+        return result
+    }
+
+    /// The end of a divider drag. A sidebar dragged shut keeps the width it had, for when it opens again.
+    /// Saved once, and only if something changed.
+    func endSidebarDrag(startWidth: Double, wasVisible: Bool) {
+        if !sidebarVisible && sidebarWidth != startWidth { sidebarWidth = startWidth }
+        if sidebarVisible != wasVisible || sidebarWidth != startWidth { saveWorkspace() }
+    }
+
+    /// A double-click on the divider.
+    func resetSidebarWidth() {
+        setSidebarWidth(WorkspaceFile.defaultSidebarWidth, save: true)
+    }
+
     /// Folders and files dropped on the sidebar: folders join it, files open in this window.
     func dropOnSidebar(_ urls: [URL]) {
         var files: [URL] = []

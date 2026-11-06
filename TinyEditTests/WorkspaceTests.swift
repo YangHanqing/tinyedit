@@ -146,3 +146,28 @@ final class WorkspaceTests: XCTestCase {
         await dispose(b)
     }
 }
+
+@MainActor
+final class SidebarDragTests: XCTestCase {
+    func testDragCollapsesAndReopensKeepingTheWidth() async {
+        let state = Workspaces.shared.newWindow()
+        await state.restoreTask?.value
+        state.sidebarVisible = true
+        state.sidebarWidth = 300
+        state.dragSidebar(to: 250, windowWidth: 1200)
+        XCTAssertEqual(state.sidebarWidth, 250)
+        state.dragSidebar(to: 40, windowWidth: 1200)
+        XCTAssertFalse(state.sidebarVisible)
+        state.dragSidebar(to: 200, windowWidth: 1200)
+        XCTAssertTrue(state.sidebarVisible)
+        XCTAssertEqual(state.sidebarWidth, 200)
+        state.dragSidebar(to: 10, windowWidth: 1200)
+        state.endSidebarDrag(startWidth: 300, wasVisible: true)
+        XCTAssertFalse(state.sidebarVisible)
+        XCTAssertEqual(state.sidebarWidth, 300, "a sidebar dragged shut opens again at its old width")
+        state.resetSidebarWidth()
+        XCTAssertEqual(state.sidebarWidth, WorkspaceFile.defaultSidebarWidth)
+        for id in state.session.tabOrder { state.removeBuffer(id, rememberClosed: false, refill: false) }
+        _ = await Workspaces.shared.close(state, asking: false)
+    }
+}

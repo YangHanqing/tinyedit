@@ -75,20 +75,32 @@ struct SidebarView: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// At least as wide as the sidebar, so a row's highlight spans it; wider names scroll sideways.
     private var tree: some View {
-        let rows = appState.fileTree.rows(for: appState.folders)
-        let selected = appState.selectedFilePath
-        return ScrollView([.horizontal, .vertical]) {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(rows) { row in
-                    FileTreeRowView(row: row, isSelected: row.node.path == selected,
-                                    unreadable: appState.fileTree.unreadable.contains(row.node.path))
-                }
+        GeometryReader { geometry in
+            ScrollView([.horizontal, .vertical]) {
+                FileTreeRows()
+                    .frame(minWidth: geometry.size.width, alignment: .leading)
+                    .padding(.vertical, 2)
             }
-            .frame(minWidth: appState.sidebarWidth)
-            .padding(.vertical, 2)
+            .scrollIndicators(.automatic)
         }
-        .scrollIndicators(.automatic)
+    }
+}
+
+/// The rows, in a view of their own: it reads only the tree, so a divider drag (a new width every frame)
+/// does not flatten the tree again.
+private struct FileTreeRows: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        let selected = appState.selectedFilePath
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(appState.fileTree.rows(for: appState.folders)) { row in
+                FileTreeRowView(row: row, isSelected: row.node.path == selected,
+                                unreadable: appState.fileTree.unreadable.contains(row.node.path))
+            }
+        }
     }
 }
 
@@ -194,30 +206,92 @@ private struct SidebarIconButton: View {
     }
 }
 
-/// The line between the sidebar and the editor, and the strip either side of it that resizes the sidebar.
-struct SidebarResizeHandle: View {
+/// The 1 pt line between the sidebar and the editor. It takes no more width than that: the strip that resizes
+/// the sidebar is an AppKit view centered on it, lying over the edges of the views either side.
+struct SidebarDivider: View {
     @Environment(AppState.self) private var appState
-    @State private var startWidth: Double?
 
     var body: some View {
-        Color.clear
-            .frame(width: 10)
+        Rectangle()
+            .fill(Color.separator)
+            .frame(width: SidebarLayout.dividerWidth)
             .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .overlay { Rectangle().fill(Color.separator).frame(width: 1).allowsHitTesting(false) }
-            .onHover { inside in
-                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            .overlay {
+                SidebarResizeHandle(appState: appState)
+                    .frame(width: SidebarLayout.handleWidth)
+                    .accessibilityHidden(true)
             }
-            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                .onChanged { value in
-                    let start = startWidth ?? appState.sidebarWidth
-                    startWidth = start
-                    appState.setSidebarWidth(start + value.translation.width, save: false)
+    }
+}
+
+/// AppKit rather than a SwiftUI drag gesture: the column-resize cursor comes from the view's own cursor rect
+/// (no push/pop to unbalance, nothing for the text view's I-beam to fight), a tracking loop keeps the drag
+/// going when the pointer leaves the strip or the sidebar collapses under it, and the strip never moves the
+/// window (it is movable by its background).
+private struct SidebarResizeHandle: NSViewRepresentable {
+    let appState: AppState
+
+    func makeNSView(context: Context) -> HandleView {
+        let view = HandleView()
+        view.appState = appState
+        return view
+    }
+
+    func updateNSView(_ view: HandleView, context: Context) { view.appState = appState }
+
+    final class HandleView: NSView {
+        weak var appState: AppState?
+
+        override var mouseDownCanMoveWindow: Bool { false }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+        override func resetCursorRects() { addCursorRect(bounds, cursor: .columnResize) }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            for area in trackingAreas { removeTrackingArea(area) }
+            addTrackingArea(NSTrackingArea(rect: .zero, options: [.cursorUpdate, .activeAlways, .inVisibleRect],
+                                           owner: self, userInfo: nil))
+        }
+
+        override func cursorUpdate(with event: NSEvent) { NSCursor.columnResize.set() }
+
+        override func mouseDown(with event: NSEvent) {
+            guard let window, let appState else { return }
+            if event.clickCount == 2 {
+                appState.resetSidebarWidth()
+                return
+            }
+            let windowWidth = { Double(window.contentView?.bounds.width ?? window.frame.width) }
+            let startX = Double(event.locationInWindow.x)
+            let startWidth = appState.sidebarWidth
+            let wasVisible = appState.sidebarVisible
+            let startShown = SidebarLayout.shownWidth(stored: startWidth, windowWidth: windowWidth(),
+                                                      editorMinWidth: appState.editorMinWidth)
+            window.disableCursorRects()
+            NSCursor.columnResize.set()
+            window.trackEvents(matching: [.leftMouseDragged, .leftMouseUp], timeout: NSEvent.foreverDuration,
+                               mode: .eventTracking) { event, stop in
+                guard let event, event.type == .leftMouseDragged else {
+                    stop.pointee = true
+                    return
                 }
-                .onEnded { _ in
-                    startWidth = nil
-                    appState.setSidebarWidth(appState.sidebarWidth, save: true)
-                })
+                let proposed = startShown + Double(event.locationInWindow.x) - startX
+                Self.cursor(for: appState.dragSidebar(to: proposed, windowWidth: windowWidth())).set()
+            }
+            window.enableCursorRects()
+            window.resetCursorRects()
+            appState.endSidebarDrag(startWidth: startWidth, wasVisible: wasVisible)
+        }
+
+        /// One-way arrows at a limit, as `NSSplitView` shows them.
+        private static func cursor(for drag: SidebarLayout.Drag) -> NSCursor {
+            switch drag {
+            case .collapse, .width(_, limited: .min): .columnResize(directions: .right)
+            case .width(_, limited: .max): .columnResize(directions: .left)
+            case .width(_, limited: nil): .columnResize
+            }
+        }
     }
 }
 

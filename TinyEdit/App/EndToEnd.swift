@@ -100,6 +100,18 @@ enum EndToEnd {
         check(a.window?.title == "Project — " + String(localized: "Untitled"), "window title leads with the folder (\(a.window?.title ?? "nil"))")
         await settle()
         snapshot(a.window, "2-folder-window")
+        if let content = a.window?.contentView {
+            // The divider's drag strip lies over both neighbours' edges and takes the mouse there.
+            let x = SidebarLayout.shownWidth(stored: a.sidebarWidth, windowWidth: content.bounds.width,
+                                             editorMinWidth: a.editorMinWidth)
+            for dx in [-4.0, 0.5, 4.0] {
+                for y in [content.bounds.maxY - 50, content.bounds.midY, content.bounds.minY + 12] {
+                    let hit = content.hitTest(NSPoint(x: x + dx, y: y))
+                    let name = hit.map { String(describing: type(of: $0)) } ?? "nil"
+                    check(name == "HandleView", "divider strip takes the mouse at x\(dx > 0 ? "+" : "")\(dx), y \(Int(y)) (\(name))")
+                }
+            }
+        }
 
         // Clicks on the rows, as a mouse would.
         check(await click(row: "src", in: a), "click on the src row")

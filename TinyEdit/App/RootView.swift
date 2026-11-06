@@ -10,21 +10,27 @@ struct RootView: View {
             // The find card floats over the editor.
             // The tab ScrollView's backing view reaches up into the title-bar safe area; keep the title above it.
             TitleBar().zIndex(1)
-            HStack(spacing: 0) {
-                if appState.sidebarVisible && !appState.folders.isEmpty {
-                    SidebarView()
-                        .frame(width: appState.sidebarWidth)
-                    SidebarResizeHandle()
-                }
-                VStack(spacing: 0) {
-                    TabBar()
-                    ThemeDivider()
-                    BannerView()
-                    editorSlot
-                        .overlay(alignment: .bottom) { ToastView() }
-                        .overlay(alignment: .top) { CommandPalette() }
-                    ThemeDivider()
-                    StatusBar()
+            GeometryReader { geometry in
+                HStack(spacing: 0) {
+                    if appState.sidebarVisible && !appState.folders.isEmpty {
+                        // Shown no wider than leaves the editor its minimum; the stored width is kept.
+                        SidebarView()
+                            .frame(width: SidebarLayout.shownWidth(stored: appState.sidebarWidth,
+                                                                   windowWidth: geometry.size.width,
+                                                                   editorMinWidth: appState.editorMinWidth))
+                        // Above the editor, so the drag strip that lies over its leading edge takes the mouse.
+                        SidebarDivider().zIndex(1)
+                    }
+                    VStack(spacing: 0) {
+                        TabBar()
+                        ThemeDivider()
+                        BannerView()
+                        editorSlot
+                            .overlay(alignment: .bottom) { ToastView() }
+                            .overlay(alignment: .top) { CommandPalette() }
+                        ThemeDivider()
+                        StatusBar()
+                    }
                 }
             }
         }
@@ -76,9 +82,9 @@ struct RootView: View {
                         SuggestionCard()
                     }
                 }
-                .frame(minWidth: 200)
+                .frame(minWidth: SidebarLayout.paneMinWidth)
             if appState.previewVisible {
-                MarkdownPreview().frame(minWidth: 200)
+                MarkdownPreview().frame(minWidth: SidebarLayout.paneMinWidth)
             }
         }
     }
