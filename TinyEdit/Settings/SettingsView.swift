@@ -175,8 +175,9 @@ private struct EditorSettingsPane: View {
             Picker("Inline calculation", selection: appState.setting(\.inlineCalculation)) {
                 ForEach(InlineCalculationMode.allCases, id: \.self) { Text($0.label).tag($0) }
             }
+            InlineCalculationHelp()
         } footer: {
-            Text("Shows the result of arithmetic on the cursor line. Press Tab to insert it.").settingsFootnote()
+            Text("Shows the result of a calculation on the cursor line, such as 2^10 or sqrt(144). Press Tab to insert it.").settingsFootnote()
         }
     }
 
@@ -239,7 +240,7 @@ private struct EditorSettingsPane: View {
 
 }
 
-private extension Text {
+extension Text {
     func settingsFootnote() -> some View {
         font(.caption).foregroundStyle(Color.textSecondary).fixedSize(horizontal: false, vertical: true)
     }

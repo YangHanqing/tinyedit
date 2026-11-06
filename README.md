@@ -23,7 +23,7 @@ TinyEdit 不包含文件夹管理、项目管理等 IDE 功能。打开文件即
 | 外观与语言 | 支持浅色、深色和跟随系统，提供记事本、代码编辑器、文稿、极简光标四款应用图标及多种编辑区背景。界面支持简体中文、繁体中文、英语、日语、韩语、德语、法语和西班牙语。 |  |
 | 语法高亮 | 支持 JSON、Markdown、Python、JavaScript、TypeScript、Swift、SQL、YAML 等 36 种语言和格式，可根据文件和内容自动识别，也可通过底部栏手动切换。 | <img src="assets/screenshots/syntax-highlighting.png" alt="语法高亮" width="560"> |
 | 命令面板 | 按 ⇧⌘P 搜索并执行命令，也可以查找已打开的标签页。支持以下操作：<br>• JSON：格式化、压缩、字符串转义与还原。<br>• 编码转换：Base64/URL 编解码、Unicode 转义还原、JWT 解码、Unix 时间戳转日期。<br>• 行处理：升序/降序排序、反转行顺序、随机打乱、移除重复行。<br>• 文本清理：移除空行、行尾空白、ANSI 转义码（终端颜色等）和不可见字符。<br>• 翻译与请求：翻译选中文字或整篇文档、发送 curl 请求。<br>文本工具优先处理选区，未选中时处理整篇文档；文本修改可以撤销。 | <img src="assets/screenshots/command-palette.png" alt="命令面板" width="560"> |
-| 随手计算 | 在文本中输入算式，行尾便会提示结果，按 Tab 即可插入。支持四则运算、括号和全角符号，使用十进制计算，`0.1 + 0.2` 可得到 `0.3`。默认在纯文本中启用，也可扩展到 Markdown。 | <img src="assets/screenshots/calculator.png" alt="随手计算" width="560"> |
+| 随手计算 | 在文本中输入算式，行尾便会提示结果，按 Tab 即可插入。支持四则运算、括号、乘方 `2^10`、开方 `sqrt(144)`、百分比、取余、阶乘、`max`/`min`/`avg`、取整、对数和三角函数，也支持全角符号。能精确计算时使用十进制，`0.1 + 0.2` 可得到 `0.3`。默认在纯文本中启用，也可扩展到 Markdown。 | <img src="assets/screenshots/calculator.png" alt="随手计算" width="560"> |
 | curl 请求 | 粘贴 curl 命令后，可先查看请求信息，再点击 Send 直接发送。响应卡片显示状态码、耗时、大小、正文和响应头，JSON 正文会自动格式化；结果可以复制、替换原命令或在新标签页打开。无需启动终端，发送前不会发起请求。 | <img src="assets/screenshots/curl-request.png" alt="curl 请求与响应" width="560"> |
 | 翻译 | 翻译选中文字或整篇文档，原文与译文并排显示。译文可以复制、替换原文或在新标签页打开。支持 Apple 系统翻译，以及兼容 OpenAI 接口的云端服务和本地模型；长文本分段处理，中断后可继续。 | <img src="assets/screenshots/translation.png" alt="文本翻译" width="560"> |
 | 自动识别粘贴内容 | 以 Base64 为例，粘贴后即可查看解码结果，并选择复制或替换。还支持 JWT、URL 编码、Unicode 转义、JSON 字符串和 Unix 时间戳。粘贴内容含终端颜色代码或不可见字符时，也会提示清理。 | <img src="assets/screenshots/paste-base64.png" alt="自动识别并解码粘贴的 Base64 内容" width="560"> |
@@ -32,7 +32,7 @@ TinyEdit 不包含文件夹管理、项目管理等 IDE 功能。打开文件即
 
 | 功能名称 | 介绍 | 图片 |
 | --- | --- | --- |
-| Markdown 预览 | 按 ⇧⌘V 并排查看正文与预览，支持标题、列表、引用、表格、代码块，以及普通图片和表格内图片；兼容 `<img>` 尺寸设置与 `<br>` 换行。 | <img src="assets/screenshots/markdown-tasks.png" alt="Markdown 预览与待办事项" width="560"> |
+| Markdown 预览 | 按 ⇧⌘V 并排查看正文与预览，也可设置为默认显示预览；支持标题、列表、引用、表格、代码块，以及普通图片和表格内图片；兼容 `<img>` 尺寸设置与 `<br>` 换行。 | <img src="assets/screenshots/markdown-tasks.png" alt="Markdown 预览与待办事项" width="560"> |
 | 待办事项 | 使用 `- [ ]` 记录待办，点击预览中的方框或按 ⌘↩ 切换完成状态。底部栏显示完成进度，编辑时按回车可继续添加下一项。 |  |
 
 ### JSON
