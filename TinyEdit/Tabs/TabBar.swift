@@ -40,16 +40,14 @@ struct TabBar: View {
                                 isRenaming: renamingID == buffer.id,
                                 onRename: { finishRename(buffer.id, name: $0) })
                             .contextMenu { menu(for: buffer) }
-                            .draggable(buffer.id.uuidString)
-                            .dropDestination(for: String.self) { items, _ in
-                                guard let raw = items.first, let dragged = UUID(uuidString: raw) else { return false }
-                                appState.moveTab(dragged, before: buffer.id)
-                                return true
-                            }
+                            .onDrag { TabDrag.begin(buffer.id) }
+                            .onDrop(of: [TabDrag.type], isTargeted: nil) { _ in dropTab(before: buffer.id) }
                     }
                 }
                 .padding(.horizontal, TabStripLayout.padding)
             }
+            // Past the last tab: the dragged tab goes last.
+            .onDrop(of: [TabDrag.type], isTargeted: nil) { _ in dropTab(before: nil) }
             .scrollPosition($position)
             .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
                 ScrollMetrics(offset: geometry.contentOffset.x, viewport: geometry.containerSize.width)
@@ -77,6 +75,17 @@ struct TabBar: View {
         .onChange(of: appState.session.selectedBufferID) { _, _ in revealSelected(animated: true) }
         .onChange(of: appState.session.tabOrder.count) { _, _ in revealSelected(animated: true) }
         .onChange(of: stripWidth) { _, _ in revealSelected(animated: false) }
+    }
+
+    /// A tab from this window is reordered; one from another window moves here.
+    private func dropTab(before target: UUID?) -> Bool {
+        guard let id = TabDrag.take() else { return false }
+        if appState.session.buffers[id] != nil {
+            if let target { appState.moveTab(id, before: target) } else { appState.moveTabToEnd(id) }
+        } else {
+            Task { await Workspaces.shared.moveTab(id, to: appState, before: target) }
+        }
+        return true
     }
 
     private func layout(for buffers: [EditorBuffer]) -> TabStripLayout {
@@ -140,6 +149,8 @@ struct TabBar: View {
         Button("Close Tabs to the Right") { appState.closeTabs(.right, around: id) }
             .disabled(appState.tabsToClose(.right, around: id).isEmpty)
         Button("Close All Tabs") { appState.closeTabs(.all, around: id) }
+        Divider()
+        Button("Move Tab to New Window") { Task { await Workspaces.shared.detachTab(id) } }
         if buffer.isUntitled {
             Divider()
             Button("Rename Tab…") { renamingID = id }

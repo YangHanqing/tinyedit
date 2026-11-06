@@ -4,7 +4,7 @@
 
 TinyEdit is a **native macOS text editor** for reading and editing everyday files such as TXT, Markdown (MD) and JSON. Its clean, modern SwiftUI interface keeps the app lightweight while providing a complete set of everyday editing tools.
 
-TinyEdit has no folder management, project management or other IDE features. Open a file to read and edit it, or start typing without creating a file first. Tabs and unsaved text are kept automatically, so you can pick up where you left off after closing the window or quitting.
+TinyEdit has no project management or other IDE features; the sidebar only browses folders. Open a file to read and edit it, or start typing without creating a file first. Tabs and unsaved text are kept automatically, so you can pick up where you left off after closing the window or quitting.
 
 ![TinyEdit overview](assets/screenshots/overview.png)
 
@@ -18,6 +18,7 @@ All screenshots use the English interface and dark theme. The interface language
 | --- | --- | --- |
 | Everyday editing | Tabs, find and replace, word wrap, line numbers, indent guides, matching brackets and selected-word highlighting. Duplicate, move, delete and join lines, or toggle comments. |  |
 | Files and encodings | UTF-8, UTF-16 and GB18030 (including GBK / GB2312), with line endings preserved. External file changes and deletions prompt you to choose what to do; reloaded changes are marked beside the line numbers. |  |
+| Folders and windows | Open or drop a folder and it opens in a new window, its files listed in the sidebar; click one to open it. Changes on disk show up by themselves. ⇧⌘N opens a new window, ⌃⌘S shows or hides the sidebar. Drag a tab out of a window to make it a window of its own, or onto another window to move it there. Each window's tabs, folders and position come back when you reopen TinyEdit. |  |
 | Command line | Run `tinyedit file` in Terminal to open a file, `tinyedit file:120` to open it at line 120, and `command \| tinyedit` to open what a command prints in a new tab. See [Command line](#command-line) below to install it. |  |
 | Session recovery | Tabs, unsaved text, cursor and scroll position are kept automatically. Recovery data is separate from your files; files change only when you save them. |  |
 | Text from images | Paste a screenshot or drop a picture to insert its text. Recognition uses Apple Vision on your Mac. On macOS 26, tables can become text ready to paste into a spreadsheet. |  |
@@ -59,6 +60,7 @@ TinyEdit comes with a `tinyedit` command. In Settings ▸ General ▸ Command Li
 ```sh
 tinyedit notes.md             # open a file; a missing one is created empty first
 tinyedit a.txt b.json         # open several files, one tab each
+tinyedit .                    # open the current folder in a new window
 tinyedit main.swift:120       # open at line 120 (main.swift:120:5 for a column too)
 curl -s https://api.example.com/items | tinyedit   # open what a command prints in a new Untitled tab
 pbpaste | tinyedit            # piped text gets the paste offers: language, Format JSON, escape-code cleanup

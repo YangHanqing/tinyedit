@@ -6,7 +6,9 @@ enum AppShortcut {
     static let newTab = KeyboardShortcut("t", modifiers: .command)
     /// Not a menu item: AppDelegate's key monitor.
     static let newTabAlternate = KeyboardShortcut("n", modifiers: .command)
+    static let newWindow = KeyboardShortcut("n", modifiers: [.command, .shift])
     static let open = KeyboardShortcut("o", modifiers: .command)
+    static let openFolder = KeyboardShortcut("o", modifiers: [.command, .shift])
     static let closeTab = KeyboardShortcut("w", modifiers: .command)
     static let closeWindow = KeyboardShortcut("w", modifiers: [.command, .shift])
     static let reopenClosedTab = KeyboardShortcut("t", modifiers: [.command, .shift])
@@ -34,6 +36,7 @@ enum AppShortcut {
     static let toggleComment = KeyboardShortcut("/", modifiers: .command)
     static let toggleTask = KeyboardShortcut(.return, modifiers: .command)
 
+    static let toggleSidebar = KeyboardShortcut("s", modifiers: [.command, .control])
     static let markdownPreview = KeyboardShortcut("v", modifiers: [.command, .shift])
     static let zoomIn = KeyboardShortcut("+", modifiers: .command)
     /// Not a menu item: AppDelegate's key monitor. On a US keyboard "+" is Shift-"=", which AppKit does not
@@ -81,7 +84,9 @@ enum ShortcutCatalog {
     static let groups: [ShortcutGroup] = [
         ShortcutGroup(title: "Files and Tabs", items: [
             ShortcutItem("New Tab", AppShortcut.newTab, AppShortcut.newTabAlternate),
+            ShortcutItem("New Window", AppShortcut.newWindow),
             ShortcutItem("Open…", AppShortcut.open),
+            ShortcutItem("Open Folder…", AppShortcut.openFolder),
             ShortcutItem("Reopen Closed Tab", AppShortcut.reopenClosedTab),
             ShortcutItem("Close Tab", AppShortcut.closeTab),
             ShortcutItem("Show Next Tab", AppShortcut.nextTab),
@@ -123,6 +128,7 @@ enum ShortcutCatalog {
             ShortcutItem("Close the find or Go to Line card", key(.escape)),
         ]),
         ShortcutGroup(title: "View", items: [
+            ShortcutItem("Show or Hide Sidebar", AppShortcut.toggleSidebar),
             ShortcutItem("Toggle Markdown Preview", AppShortcut.markdownPreview),
             ShortcutItem("Zoom In", AppShortcut.zoomIn),
             ShortcutItem("Zoom Out", AppShortcut.zoomOut),

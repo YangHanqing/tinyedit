@@ -40,6 +40,19 @@
 	<string>NSApplication</string>
 	<key>LSMultipleInstancesProhibited</key>
 	<true/>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>cn.hqyang.tinyedit.tab</string>
+			<key>UTTypeDescription</key>
+			<string>TinyEdit Tab</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

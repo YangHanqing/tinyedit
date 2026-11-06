@@ -7,7 +7,7 @@ struct TinyEditApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
-        // `Window` is single-instance by construction: no New Window command, no second editor window.
+        // The main window. Other editor windows are AppKit windows made by `Workspaces`.
         Window("TinyEdit", id: "main") {
             RootView()
                 .environment(appState)
@@ -22,7 +22,7 @@ struct TinyEditApp: App {
         .windowStyle(.hiddenTitleBar)
         .restorationBehavior(.disabled)
         .defaultSize(WindowSize.load(visible: NSScreen.main?.visibleFrame.size))
-        .commands { AppCommands(appState: appState) }
+        .commands { AppCommands() }
 
         Settings {
             SettingsView()

@@ -15,6 +15,7 @@ Usage: tinyedit [file[:line[:column]] ...]
 
   tinyedit notes.md            Open a file in a tab (an empty one is created if it is missing)
   tinyedit a.txt b.json        Open several files
+  tinyedit .                   Open a folder in a new window, with its files in the sidebar
   tinyedit main.swift:120      Open a file at line 120 (main.swift:120:5 for a column)
   curl -s URL | tinyedit       Open what a command prints in a new Untitled tab
   tinyedit -                   Read the text from standard input
@@ -73,7 +74,9 @@ for arg in "$@"; do
         fi
     fi
     if [[ -d $file ]]; then
-        fail "$file is a folder"; result=1; continue
+        [[ -z $position ]] || { fail "$file is a folder"; result=1; continue }
+        files+=${file:a}   # opens in a window of its own, with the folder in the sidebar
+        continue
     fi
     if [[ ! -e $file ]]; then
         if [[ ! -d ${file:h} ]]; then

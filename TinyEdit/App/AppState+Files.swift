@@ -36,7 +36,7 @@ extension AppState {
         guard launchGateOpen else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
-        panel.canChooseDirectories = false
+        panel.canChooseDirectories = true   // a folder opens in a window of its own
         panel.allowsMultipleSelection = true
         // No allowedContentTypes: TinyEdit tries to open any text file.
         guard panel.runModal() == .OK else { return }
@@ -50,22 +50,31 @@ extension AppState {
     }
 
     func openURLsAsync(_ urls: [URL]) async {
+        guard !closing, !transferring else { return }
         let requests = urls.filter(CommandLineTool.isRequest)
         let urls = urls.filter { !CommandLineTool.isRequest($0) }
         showWindow() // the red button may have hidden it; the tab and any error toast must be seen
         flushImmediately() // a large read or a failed open must not sit inside another buffer's debounce window
         var firstNew: UUID?
         var existing: UUID?
-        var skippedFolder = false
+        // A folder window starts with an empty Untitled tab; the first file opened there takes its place.
+        let placeholders = isMain ? [] : session.tabOrder.filter { id in
+            session.buffers[id]?.isUntitled == true && session.buffers[id]?.titleIsCustom == false && (stores[id]?.length ?? 1) == 0
+        }
         var opened = 0
         var overLimit = 0
         for url in urls {
             var isDir: ObjCBool = false
             if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
-                skippedFolder = true
+                Workspaces.shared.openFolder(url, from: self)
                 continue
             }
             if let id = bufferID(for: url) { existing = existing ?? id; continue }
+            // A file is open in one window at a time: asked for here, its tab moves here.
+            if let other = Workspaces.shared.holder(of: url, excluding: self), let id = other.bufferID(for: url) {
+                if await Workspaces.shared.moveTab(id, to: self, select: false) { existing = existing ?? id }
+                continue
+            }
             guard hasRoomForTab else { overLimit += 1; continue }
 
             let started = access.start(url)
@@ -74,6 +83,16 @@ extension AppState {
                 if let id = bufferID(for: url) { // opened concurrently
                     if started { access.stop(url) }
                     existing = existing ?? id
+                    continue
+                }
+                guard !closing, !transferring else {
+                    if started { access.stop(url) }
+                    return
+                }
+                // Another window may have finished the same asynchronous read first.
+                if let other = Workspaces.shared.holder(of: url, excluding: self), let id = other.bufferID(for: url) {
+                    if started { access.stop(url) }
+                    if await Workspaces.shared.moveTab(id, to: self, select: false) { existing = existing ?? id }
                     continue
                 }
                 let bookmark = try access.bookmark(for: url)
@@ -104,8 +123,10 @@ extension AppState {
             }
         }
         if let target = firstNew ?? existing { selectTab(target) }
+        if firstNew != nil {
+            for id in placeholders where (stores[id]?.length ?? 1) == 0 { removeBuffer(id, rememberClosed: false, refill: false) }
+        }
         await runCommandLineRequests(requests)
-        if skippedFolder { showToast(String(localized: "Folders can't be opened")) }
         if overLimit > 0 {
             showToast(opened == 0 ? Self.tabLimitMessage
                       : String(localized: "Opened \(opened) of \(opened + overLimit) files. Tabs are limited to \(EditorSession.maxTabs)."))
@@ -133,6 +154,7 @@ extension AppState {
     /// Untitled and broken-bookmark buffers go through Save As. External conflicts confirm first.
     @discardableResult
     func saveFlow(_ id: UUID) async -> Bool {
+        guard !transferring, !closing else { return false }
         guard let b = session.buffers[id] else { return false }
         guard !b.isUntitled, let url = fileURLs[id] else { return await saveAsFlow(id) }
         if b.conflict == .external { return await confirmedOverwriteSave(id, url: url) }
@@ -164,6 +186,7 @@ extension AppState {
 
     @discardableResult
     func saveAsFlow(_ id: UUID) async -> Bool {
+        guard !transferring, !closing else { return false }
         guard let b = session.buffers[id] else { return false }
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
@@ -355,6 +378,7 @@ extension AppState {
     /// False when the user cancelled or the save did not go through, so the tab stays open.
     @discardableResult
     func closeTabAsync(_ id: UUID) async -> Bool {
+        guard !transferring, !closing else { return false }
         guard let b = session.buffers[id] else { return true }
         if !isDirtyNow(id) { removeBuffer(id); return true }
 
@@ -420,10 +444,12 @@ extension AppState {
     }
 
     /// Clean close and Discard. No content write: bump generation, remove, then manifest-with-tombstone, then delete.
-    func removeBuffer(_ id: UUID) {
+    /// A tab moving to another window is removed the same way, but leaves no Reopen Closed Tab record, and the
+    /// caller decides what an emptied window gets (`refill` false).
+    func removeBuffer(_ id: UUID, rememberClosed: Bool = true, refill: Bool = true) {
         guard let buffer = session.buffers[id], let index = session.tabOrder.firstIndex(of: id) else { return }
         host.captureViewState()
-        if let bm = buffer.fileBookmark, let store = stores[id] {
+        if rememberClosed, let bm = buffer.fileBookmark, let store = stores[id] {
             let vs = store.viewState
             let record = ClosedTabRecord(fileBookmark: bm, fileDisplayName: buffer.fileDisplayName ?? buffer.title,
                                          language: buffer.language, encoding: buffer.encoding, lineEnding: buffer.lineEnding,
@@ -460,13 +486,16 @@ extension AppState {
         let manifest = makeManifest()
         manifestSeq += 1
         let seq = manifestSeq
-        Task { [weak self, recoveryActor] in
+        let previous = pendingRemovals[id]
+        pendingRemovals[id] = Task { [weak self, recoveryActor] in
+            await previous?.value
             let out = await recoveryActor.remove(id: id, manifest: manifest, seq: seq)
             self?.handleOutcome(out)
+            if self?.pendingRemovals[id] != nil { self?.pendingRemovals[id] = nil }
         }
 
         if session.tabOrder.isEmpty {
-            newTab()
+            if refill { newTab() }
         } else {
             activeBufferChanged()
         }

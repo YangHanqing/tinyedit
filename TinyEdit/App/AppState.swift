@@ -21,6 +21,10 @@ final class AppState {
     static let shared: AppState = {
         #if DEBUG
         ScreenshotProfile.prepareDefaults()
+        if EndToEnd.phase != nil {
+            EndToEnd.prepare()
+            return AppState(root: EndToEnd.root)
+        }
         if ScreenshotProfile.scene != nil {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("TinyEdit-screenshots-" + UUID().uuidString)
             return AppState(root: root, autoRestore: false)
@@ -58,6 +62,10 @@ final class AppState {
     /// File ▸ Open Recent. Read at launch (not in init: it resolves bookmarks), then refreshed by
     /// `noteRecentDocument` and `clearRecentDocuments`.
     var recentURLs: [URL] = []
+    /// The folders in this window's sidebar, in the order they were added.
+    var folders: [WorkspaceFolder] = []
+    var sidebarVisible: Bool
+    var sidebarWidth: Double = WorkspaceFile.defaultSidebarWidth
 
     // MARK: Not observed
     /// Retains every BufferTextStore until its buffer leaves the session.
@@ -111,9 +119,29 @@ final class AppState {
     @ObservationIgnored var recoveryFailing = false
     @ObservationIgnored var terminationRefused = false
     @ObservationIgnored var recoveredCounter = 0
+    /// Nil for the main window, whose session is the app's original one at `AppPaths.root`. Every other
+    /// window has its own session under `Workspaces/<id>/` and is closed, not hidden, by the red button.
+    @ObservationIgnored let workspaceID: UUID?
+    @ObservationIgnored let fileTree = FileTreeModel()
+    /// The launch restore. Moving a tab into a new window waits for it.
+    @ObservationIgnored var restoreTask: Task<Void, Never>?
+    @ObservationIgnored var workspaceCreatedAt = Date()
+    @ObservationIgnored var workspaceWrite: Task<Void, Never>?
+    /// Set while the window is closing: nothing more is written for it.
+    @ObservationIgnored var closing = false
+    /// `workspace.json` has been read (or found missing). Nothing is written before, or it would replace it.
+    @ObservationIgnored var workspaceLoaded = false
+    /// Snapshot deletions on their way to the recovery actor. A tab moving back in waits for its own.
+    @ObservationIgnored var pendingRemovals: [UUID: Task<Void, Never>] = [:]
 
-    init(root: URL = AppPaths.root, autoRestore: Bool = true) {
+    var transferring = false
+
+    var isMain: Bool { workspaceID == nil }
+
+    init(root: URL = AppPaths.root, autoRestore: Bool = true, workspaceID: UUID? = nil) {
         self.root = root
+        self.workspaceID = workspaceID
+        sidebarVisible = workspaceID != nil
         recoveryActor = RecoveryActor(root: root)
         highlight = HighlightController(host: host)
         highlight.onReducedChanged = { [weak self] v in
@@ -150,7 +178,8 @@ final class AppState {
             return InlineCalculator.Context(mode: self.settings.inlineCalculation,
                                             language: self.selectedBuffer?.language ?? .plain)
         }
-        if autoRestore { Task { await self.restore() } }
+        fileTree.onExpandedChanged = { [weak self] in self?.saveWorkspace() }
+        if autoRestore { restoreTask = Task { await self.restore() } }
     }
 
     // MARK: Accessors
@@ -265,6 +294,13 @@ final class AppState {
         session.tabOrder.remove(at: from)
         let to = session.tabOrder.firstIndex(of: target) ?? session.tabOrder.endIndex
         session.tabOrder.insert(id, at: to)
+        flushImmediately()
+    }
+
+    func moveTabToEnd(_ id: UUID) {
+        guard let from = session.tabOrder.firstIndex(of: id), from != session.tabOrder.count - 1 else { return }
+        session.tabOrder.remove(at: from)
+        session.tabOrder.append(id)
         flushImmediately()
     }
 
@@ -440,11 +476,22 @@ final class AppState {
 
     // MARK: Settings
 
+    /// Settings are app-wide: every window takes the change, and it is saved and applied to the app once.
     func updateSettings(_ new: EditorSettings) {
         let s = new.clamped()
         guard s != settings else { return }
         let appearanceChanged = s.appearance != settings.appearance
         let iconChanged = s.appIcon != settings.appIcon
+        applySettings(s)
+        s.save()
+        if appearanceChanged { s.appearance.apply() }
+        if iconChanged { applyAppIcon() }
+        for other in Workspaces.shared.all where other !== self { other.applySettings(s) }
+    }
+
+    /// This window's side of a settings change.
+    func applySettings(_ s: EditorSettings) {
+        guard s != settings else { return }
         let languageSuggestionsChanged = s.suggestLanguageWhileTyping != settings.suggestLanguageWhileTyping
         let pasteSuggestionsChanged = s.suggestPasteDecodes != settings.suggestPasteDecodes
             || s.suggestPasteLanguage != settings.suggestPasteLanguage
@@ -468,9 +515,6 @@ final class AppState {
                 session.buffers[id]?.pasteSuggestion = nil
             }
         }
-        s.save()
-        if appearanceChanged { s.appearance.apply() }
-        if iconChanged { applyAppIcon() }
         if let b = selectedBuffer, let store = stores[b.id] {
             highlight.schedule(store: store, language: b.language, delay: .zero)
         }

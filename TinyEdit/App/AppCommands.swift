@@ -1,15 +1,22 @@
 import SwiftUI
 
 struct AppCommands: Commands {
-    let appState: AppState
+    /// Read when a command runs (and when the menus are drawn): the window the user is in.
+    private var appState: AppState { Workspaces.shared.target }
+    private var workspaces: Workspaces { Workspaces.shared }
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             // ⌘N does the same through AppDelegate, without a second menu item.
             Button("New Tab") { appState.newTabInWindow() }
                 .keyboardShortcut(AppShortcut.newTab)
+            Button("New Window") { workspaces.newWindow() }
+                .keyboardShortcut(AppShortcut.newWindow)
+            Divider()
             Button("Open…") { appState.beginOpenPanel() }
                 .keyboardShortcut(AppShortcut.open)
+            Button("Open Folder…") { workspaces.beginOpenFolderPanel() }
+                .keyboardShortcut(AppShortcut.openFolder)
             Menu("Open Recent") {
                 ForEach(appState.recentURLs, id: \.self) { url in
                     Button(url.lastPathComponent) { appState.openURLs([url]) }
@@ -21,7 +28,7 @@ struct AppCommands: Commands {
         CommandGroup(replacing: .saveItem) {
             Button("Close Tab") { appState.closeTabOrFrontWindow() }
                 .keyboardShortcut(AppShortcut.closeTab)
-            Button("Close Window") { appState.hideWindow(NSApp.keyWindow) }
+            Button("Close Window") { workspaces.closeWindow(NSApp.keyWindow) }
                 .keyboardShortcut(AppShortcut.closeWindow)
             Button("Reopen Closed Tab") { appState.reopenClosedTab() }
                 .keyboardShortcut(AppShortcut.reopenClosedTab)
@@ -32,6 +39,12 @@ struct AppCommands: Commands {
                 .keyboardShortcut(AppShortcut.saveAs)
         }
         CommandGroup(after: .windowSize) {
+            Divider()
+            Button("Main Window") { AppState.shared.showWindow() }
+            Button("Move Tab to New Window") {
+                let state = appState
+                if let id = state.session.selectedBufferID { Task { await workspaces.detachTab(id) } }
+            }
             Divider()
             // AppDelegate's key monitor handles the keys; the items show them and work from the menu.
             Button("Show Next Tab") { appState.selectAdjacentTab(1) }
@@ -70,6 +83,9 @@ struct AppCommands: Commands {
                 .keyboardShortcut(AppShortcut.toggleTask)
         }
         CommandGroup(after: .toolbar) {
+            Button(workspaces.active.sidebarVisible ? LocalizedStringKey("Hide Sidebar") : LocalizedStringKey("Show Sidebar")) { appState.toggleSidebar() }
+                .keyboardShortcut(AppShortcut.toggleSidebar)
+            Divider()
             Button("Toggle Markdown Preview") { appState.togglePreview() }
                 .keyboardShortcut(AppShortcut.markdownPreview)
             Button("Clear Change Markers") { appState.clearChangeMarkers() }

@@ -85,6 +85,11 @@ actor RecoveryActor {
         return FlushOutcome(ok: ok, written: [:], diskFull: false)
     }
 
+    /// A buffer this window removed comes back (a tab moved out and in again, same id): its writes count again.
+    func readmit(_ id: UUID) {
+        if latest[id] == .max { latest[id] = nil }
+    }
+
     /// Deletes a snapshot whose tombstone is already in a completed manifest.
     func deleteTombstoned(_ ids: [UUID]) {
         for id in ids { try? recovery.deleteSnapshot(recoveryFile: "\(id.uuidString).snapshot") }

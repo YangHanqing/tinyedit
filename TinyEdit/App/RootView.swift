@@ -6,42 +6,58 @@ struct RootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Vertical stack order: title row, tab bar, banner, editor slot, status bar. The find card floats over the editor.
+            // Vertical stack order: title row, then the sidebar beside tab bar, banner, editor slot and status bar.
+            // The find card floats over the editor.
             // The tab ScrollView's backing view reaches up into the title-bar safe area; keep the title above it.
             TitleBar().zIndex(1)
-            TabBar()
-            ThemeDivider()
-            BannerView()
-            editorSlot
-                .overlay(alignment: .bottom) { ToastView() }
-                .overlay(alignment: .top) { CommandPalette() }
-            ThemeDivider()
-            StatusBar()
+            HStack(spacing: 0) {
+                if appState.sidebarVisible {
+                    SidebarView()
+                        .frame(width: appState.sidebarWidth)
+                    SidebarResizeHandle()
+                }
+                VStack(spacing: 0) {
+                    TabBar()
+                    ThemeDivider()
+                    BannerView()
+                    editorSlot
+                        .overlay(alignment: .bottom) { ToastView() }
+                        .overlay(alignment: .top) { CommandPalette() }
+                    ThemeDivider()
+                    StatusBar()
+                }
+            }
         }
         .ignoresSafeArea(.container, edges: .top)
         .frame(minWidth: 480, minHeight: 320)
         .background(Color.editorBackground)
-        .navigationTitle(appState.selectedBuffer.map { $0.displayTitle + " — TinyEdit" } ?? "TinyEdit")
-        .background(WindowAccessor())
+        .disabled(appState.transferring)
+        .navigationTitle(windowTitle)
+        .background(WindowAccessor(state: appState, title: windowTitle))
         .sheet(item: Bindable(appState).translationInput) { input in
             TranslationView(input: input).environment(appState)
         }
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+        .onDrop(of: [.fileURL, TabDrag.type], isTargeted: nil) { providers in
+            if providers.contains(where: { $0.hasItemConformingToTypeIdentifier(TabDrag.type.identifier) }) {
+                // A tab from another window, dropped anywhere but a tab bar, joins this window last.
+                guard let dragged = TabDrag.current, Workspaces.shared.owner(ofTab: dragged) !== appState,
+                      let id = TabDrag.take() else { return false }
+                Task { await Workspaces.shared.moveTab(id, to: appState) }
+                return true
+            }
             // Collected first, so several pictures dropped together are read as one.
-            let group = DispatchGroup()
-            let urls = DroppedURLs()
-            for p in providers {
-                group.enter()
-                _ = p.loadObject(ofClass: URL.self) { url, _ in
-                    if let url { urls.append(url) }
-                    group.leave()
-                }
-            }
-            group.notify(queue: .main) {
-                MainActor.assumeIsolated { appState.dropFiles(urls.all, at: nil) }
-            }
+            loadFileURLs(providers) { appState.dropFiles($0, at: nil) }
             return true
         }
+    }
+
+    /// The Window menu, the Dock and Mission Control show it. A workspace leads with its first folder.
+    private var windowTitle: String {
+        let tab = appState.selectedBuffer?.displayTitle
+        if let folder = appState.folders.first?.name {
+            return tab.map { folder + " — " + $0 } ?? folder
+        }
+        return tab.map { $0 + " — TinyEdit" } ?? "TinyEdit"
     }
 
     /// One `EditorView` whether or not the preview shows. Two (one per `if` branch) share the host's one
@@ -68,12 +84,16 @@ struct RootView: View {
     }
 }
 
-/// Reaches the NSWindow to disable AppKit restoration, to route the red button to "hide, keep state",
-/// and to remember the size the user drags it to.
+/// Reaches the NSWindow to disable AppKit restoration, to route the main window's red button to "hide, keep
+/// state", to keep the window title (an AppKit-made window does not take `navigationTitle`), and to remember
+/// the size the user drags it to.
 struct WindowAccessor: NSViewRepresentable {
+    let state: AppState
+    let title: String
+
     final class Coordinator: NSObject {
         @MainActor @objc func closeWindow(_ sender: Any?) {
-            AppState.shared.hideWindow((sender as? NSButton)?.window)
+            Workspaces.shared.closeWindow((sender as? NSButton)?.window)
         }
 
         @MainActor @objc func didEndLiveResize(_ note: Notification) {
@@ -86,6 +106,7 @@ struct WindowAccessor: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let v = NSView()
+        let state = self.state
         DispatchQueue.main.async { [weak v] in
             guard let window = v?.window else { return }
             window.isRestorable = false
@@ -94,27 +115,24 @@ struct WindowAccessor: NSViewRepresentable {
             window.titlebarAppearsTransparent = true
             window.styleMask.insert(.fullSizeContentView)
             window.toolbar = nil
-            let button = window.standardWindowButton(.closeButton)
-            button?.target = context.coordinator
-            button?.action = #selector(Coordinator.closeWindow(_:))
+            if state.isMain {
+                // The other windows' delegate decides how they close.
+                let button = window.standardWindowButton(.closeButton)
+                button?.target = context.coordinator
+                button?.action = #selector(Coordinator.closeWindow(_:))
+            }
             NotificationCenter.default.addObserver(context.coordinator, selector: #selector(Coordinator.didEndLiveResize(_:)),
                                                    name: NSWindow.didEndLiveResizeNotification, object: window)
-            AppState.shared.window = window
+            state.window = window
+            if window.title != title { window.title = title }
             #if DEBUG
-            ScreenshotProfile.configure(window, state: AppState.shared)
+            if state.isMain { ScreenshotProfile.configure(window, state: state) }
             #endif
         }
         return v
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
-/// URLs from the window drop's item providers, which call back on arbitrary queues.
-private final class DroppedURLs: @unchecked Sendable {
-    private let lock = NSLock()
-    private var urls: [URL] = []
-
-    func append(_ url: URL) { lock.withLock { urls.append(url) } }
-    var all: [URL] { lock.withLock { urls } }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if let window = nsView.window, window.title != title { window.title = title }
+    }
 }

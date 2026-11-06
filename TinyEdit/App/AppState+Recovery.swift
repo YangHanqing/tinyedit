@@ -51,8 +51,9 @@ extension AppState {
     }
 
     /// Captures on the main actor, then waits for the recovery actor. Tests await this.
-    func performFlush() async {
-        guard launchGateOpen else { return }
+    @discardableResult
+    func performFlush() async -> Bool {
+        guard launchGateOpen else { return false }
         flushTask?.cancel()
         host.captureViewState()
         let items = pendingItems()
@@ -60,6 +61,7 @@ extension AppState {
         let seq = nextSeq()
         let out = await recoveryActor.flush(items: items, manifest: manifest, seq: seq)
         handleOutcome(out)
+        return out.ok
     }
 
     func handleOutcome(_ out: FlushOutcome) {
@@ -90,15 +92,11 @@ extension AppState {
             return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
         }
 
-        flushTask?.cancel()
-        host.captureViewState()
-        let items = pendingItems()
-        let manifest = makeManifest()
-        let seq = nextSeq()
+        let flush = prepareTerminationFlush()
         let shot = OneShot()
 
-        Task { [weak self, recoveryActor] in
-            let out = await recoveryActor.flush(items: items, manifest: manifest, seq: seq)
+        Task { [weak self] in
+            let out = await flush()
             guard !shot.done else { return }
             shot.done = true
             if out.ok {
@@ -120,6 +118,18 @@ extension AppState {
         return .terminateLater
     }
 
+    /// Copies every pending generation and the manifest now, on the main actor; the returned job writes them.
+    /// Quit runs one per window.
+    func prepareTerminationFlush() -> @Sendable () async -> FlushOutcome {
+        flushTask?.cancel()
+        host.captureViewState()
+        let items = pendingItems()
+        let manifest = makeManifest()
+        let seq = nextSeq()
+        let actor = recoveryActor
+        return { await actor.flush(items: items, manifest: manifest, seq: seq) }
+    }
+
     // MARK: Close Window
 
     /// Red button and Close Window: flush, hide, keep the process and every store alive.
@@ -133,7 +143,7 @@ extension AppState {
         window?.makeKeyAndOrderFront(nil)
     }
 
-    /// `⌘T` and `⌘N` (there is one window, so New is a tab).
+    /// `⌘T` and `⌘N`: a tab in this window, shown again if the red button hid it.
     func newTabInWindow() {
         showWindow()
         newTab()
@@ -142,6 +152,7 @@ extension AppState {
     // MARK: Launch restore
 
     func restore() async {
+        loadWorkspace()
         let sessions = SessionStore(root: root)
         let recovery = RecoveryStore(root: root)
         let plan = await Task.detached(priority: .userInitiated) {
@@ -204,7 +215,7 @@ extension AppState {
 
     /// Resolve the bookmark, start access, refresh a stale bookmark, register the presenter.
     /// A failed resolve keeps the snapshot text and shows the Relocate banner.
-    private func attachRestoredFile(_ buffer: inout EditorBuffer) {
+    func attachRestoredFile(_ buffer: inout EditorBuffer) {
         guard let data = buffer.fileBookmark else { return }
         do {
             let (url, stale) = try access.resolve(data)
