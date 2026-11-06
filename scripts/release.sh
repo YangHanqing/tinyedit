@@ -152,9 +152,9 @@ FINAL="$DIST/notes-$VERSION.md"
 
 ### 安装 / Install
 
-需要 macOS 15 或更高版本，支持 Apple 芯片（M 系列）和 Intel Mac。下载 \`$(basename "$DMG")\`，打开后将 TinyEdit 拖到“应用程序”文件夹。应用已使用 Developer ID 签名并经过 Apple 公证，可直接打开。
+需要 macOS 14 或更高版本，支持 Apple 芯片（M 系列）和 Intel Mac。下载 \`$(basename "$DMG")\`，打开后将 TinyEdit 拖到“应用程序”文件夹。应用已使用 Developer ID 签名并经过 Apple 公证，可直接打开。
 
-Requires macOS 15 or later, on an Apple silicon (M-series) or Intel Mac. Download \`$(basename "$DMG")\`, open it and drag TinyEdit into the Applications folder. The app is signed with a Developer ID and notarized by Apple, so it opens normally.
+Requires macOS 14 or later, on an Apple silicon (M-series) or Intel Mac. Download \`$(basename "$DMG")\`, open it and drag TinyEdit into the Applications folder. The app is signed with a Developer ID and notarized by Apple, so it opens normally.
 
 SHA-256 (\`$(basename "$DMG")\`):
 \`$SHA\`
