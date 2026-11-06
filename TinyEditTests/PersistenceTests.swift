@@ -97,6 +97,22 @@ final class PersistenceTests: XCTestCase {
         XCTAssertNil(meta.makeBuffer())
     }
 
+    /// Nil follows the default-preview setting; an explicit choice, off included, survives a round trip.
+    /// A manifest written before the setting only knew `true` as a choice.
+    func testMarkdownPreviewChoiceRoundTrips() {
+        for choice in [nil, true, false] as [Bool?] {
+            var b = EditorBuffer(title: "x")
+            b.markdownPreviewVisible = choice
+            XCTAssertEqual(BufferMetadata(b).makeBuffer()?.markdownPreviewVisible, choice)
+        }
+        var legacy = BufferMetadata(EditorBuffer(title: "x"))
+        legacy.markdownPreviewChosen = nil
+        legacy.markdownPreviewVisible = false
+        XCTAssertNil(legacy.makeBuffer()?.markdownPreviewVisible)
+        legacy.markdownPreviewVisible = true
+        XCTAssertEqual(legacy.makeBuffer()?.markdownPreviewVisible, true)
+    }
+
     func testNonUTF8SnapshotSkippedAndLeftOnDisk() throws {
         let rec = RecoveryStore(root: root)
         let good = UUID(), bad = UUID()

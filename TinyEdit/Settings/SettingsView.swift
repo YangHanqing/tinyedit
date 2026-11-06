@@ -141,6 +141,7 @@ private struct EditorSettingsPane: View {
             Toggle("Highlight matching brackets", isOn: appState.setting(\.highlightMatchingBrackets))
             Toggle("Highlight other occurrences of selected text", isOn: appState.setting(\.highlightSelectionOccurrences))
             Toggle("Show invisible characters", isOn: appState.setting(\.showInvisibles))
+            Toggle("Show Markdown preview by default", isOn: appState.setting(\.markdownPreviewByDefault))
         }
     }
 

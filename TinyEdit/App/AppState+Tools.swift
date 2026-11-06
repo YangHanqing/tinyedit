@@ -233,14 +233,15 @@ extension AppState {
 
     func togglePreview() {
         guard let id = session.selectedBufferID, let b = session.buffers[id], b.language == .markdown else { return }
-        session.buffers[id]?.markdownPreviewVisible.toggle()
+        let visible = !previewVisible  // read before the write: an optional-chain assignment evaluates it inside the access
+        session.buffers[id]?.markdownPreviewVisible = visible
         schedulePreview(delay: .zero)
         flushImmediately()
     }
 
     var previewVisible: Bool {
         guard let b = selectedBuffer else { return false }
-        return b.markdownPreviewVisible && b.language == .markdown
+        return b.language == .markdown && (b.markdownPreviewVisible ?? settings.markdownPreviewByDefault)
     }
 
     /// 200 ms debounce, parsed off the main thread, dropped if the generation moved on.

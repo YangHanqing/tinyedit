@@ -448,7 +448,9 @@ final class AppState {
             || s.suggestPasteLanguage != settings.suggestPasteLanguage
             || s.suggestPasteCleanup != settings.suggestPasteCleanup
             || s.recognizeCurlCommands != settings.recognizeCurlCommands
+        let previewDefaultChanged = s.markdownPreviewByDefault != settings.markdownPreviewByDefault
         settings = s
+        if previewDefaultChanged { schedulePreview(delay: .zero) }
         if languageSuggestionsChanged {
             for task in languageDetectionTasks.values { task.cancel() }
             languageDetectionTasks.removeAll()

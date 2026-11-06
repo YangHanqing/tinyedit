@@ -18,6 +18,7 @@ struct BufferMetadata: Codable, Equatable, Sendable {
     var selectionLength: Int
     var scrollPosition: Double
     var markdownPreviewVisible: Bool
+    var markdownPreviewChosen: Bool?  // absent before the default-preview setting; then only `true` was a choice
     var lastSavedContentHash: String?
     var diskContentHash: String?
     var diskModificationDate: Date?
@@ -41,7 +42,8 @@ struct BufferMetadata: Codable, Equatable, Sendable {
         cursorLocation = b.cursorLocation
         selectionLength = b.selectionLength
         scrollPosition = b.scrollPosition
-        markdownPreviewVisible = b.markdownPreviewVisible
+        markdownPreviewVisible = b.markdownPreviewVisible ?? false
+        markdownPreviewChosen = b.markdownPreviewVisible != nil
         lastSavedContentHash = b.lastSavedContentHash
         diskContentHash = b.diskContentHash
         diskModificationDate = b.diskModificationDate
@@ -70,7 +72,7 @@ struct BufferMetadata: Codable, Equatable, Sendable {
         b.cursorLocation = cursorLocation
         b.selectionLength = selectionLength
         b.scrollPosition = scrollPosition
-        b.markdownPreviewVisible = markdownPreviewVisible
+        b.markdownPreviewVisible = markdownPreviewChosen == true || markdownPreviewVisible ? markdownPreviewVisible : nil
         b.lastSavedContentHash = lastSavedContentHash
         b.diskContentHash = diskContentHash
         b.diskModificationDate = diskModificationDate

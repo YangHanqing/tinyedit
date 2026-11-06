@@ -29,7 +29,8 @@ struct EditorBuffer: Identifiable, Equatable, Sendable {
     var cursorLocation: Int = 0      // flush-time copy of BufferTextStore.viewState
     var selectionLength: Int = 0
     var scrollPosition: Double = 0
-    var markdownPreviewVisible: Bool = false
+    /// Nil until the user toggles the preview in this tab: it then follows Settings `markdownPreviewByDefault`.
+    var markdownPreviewVisible: Bool?
     var lastSavedContentHash: String?  // nil only for Untitled
     var diskContentHash: String?       // last acknowledged raw on-disk bytes
     var diskModificationDate: Date?
