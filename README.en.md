@@ -49,7 +49,7 @@ All screenshots use the English interface and dark theme. The interface language
 Download the latest version from [Releases](../../releases) and drag TinyEdit into Applications.
 
 - macOS 15 or later.
-- Apple silicon (M-series) Mac. Intel Macs are not supported yet.
+- Apple silicon (M-series) or Intel Mac.
 - Files up to 64 MB. Above 2 MB, only visible text is highlighted; above 5 MB, highlighting and Markdown preview are disabled.
 
 ## Command line

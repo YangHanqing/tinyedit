@@ -91,7 +91,9 @@ APP=build/release/Build/Products/Release/TinyEdit.app
 sign --options runtime --entitlements TinyEditQuickLook/TinyEditQuickLook.entitlements "$APP/Contents/PlugIns/TinyEditQuickLook.appex"
 sign --options runtime --entitlements TinyEdit/TinyEdit.entitlements "$APP"
 codesign --verify --deep --strict "$APP"
-[ "$(lipo -archs "$APP/Contents/MacOS/TinyEdit")" = arm64 ] || fail "app is not arm64-only"
+for binary in "$APP/Contents/MacOS/TinyEdit" "$APP/Contents/PlugIns/TinyEditQuickLook.appex/Contents/MacOS/TinyEditQuickLook"; do
+  [ "$(lipo -archs "$binary" | tr " " "\n" | sort | xargs)" = "arm64 x86_64" ] || fail "$binary is not universal (arm64 + x86_64)"
+done
 [ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "$VERSION" ] || fail "Info.plist version is not $VERSION"
 # The signed entitlements must be exactly the checked-in ones (no injected get-task-allow).
 diff <(codesign -d --entitlements - --xml "$APP" 2>/dev/null | plutil -p - | sort) \
@@ -108,7 +110,7 @@ fi
 
 echo "Packaging…"
 DIST=build/dist
-DMG="$DIST/TinyEdit-$VERSION-arm64.dmg"
+DMG="$DIST/TinyEdit-$VERSION.dmg"
 # The window layout names the volume, so it is always "TinyEdit".
 VOLUME=/Volumes/TinyEdit
 [ ! -e "$VOLUME" ] || fail "$VOLUME is mounted; eject it first"
@@ -150,9 +152,9 @@ FINAL="$DIST/notes-$VERSION.md"
 
 ### 安装 / Install
 
-需要 macOS 15 或更高版本、Apple 芯片（M 系列）Mac。下载 \`$(basename "$DMG")\`，打开后将 TinyEdit 拖到“应用程序”文件夹。应用已使用 Developer ID 签名并经过 Apple 公证，可直接打开。
+需要 macOS 15 或更高版本，支持 Apple 芯片（M 系列）和 Intel Mac。下载 \`$(basename "$DMG")\`，打开后将 TinyEdit 拖到“应用程序”文件夹。应用已使用 Developer ID 签名并经过 Apple 公证，可直接打开。
 
-Requires macOS 15 or later on an Apple silicon (M-series) Mac. Download \`$(basename "$DMG")\`, open it and drag TinyEdit into the Applications folder. The app is signed with a Developer ID and notarized by Apple, so it opens normally.
+Requires macOS 15 or later, on an Apple silicon (M-series) or Intel Mac. Download \`$(basename "$DMG")\`, open it and drag TinyEdit into the Applications folder. The app is signed with a Developer ID and notarized by Apple, so it opens normally.
 
 SHA-256 (\`$(basename "$DMG")\`):
 \`$SHA\`

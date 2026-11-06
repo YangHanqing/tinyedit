@@ -18,15 +18,15 @@ settings:
   base:
     # Shared by the app and its Quick Look extension, which must carry the same version.
     # The patch number goes up with each feature.
-    MARKETING_VERSION: "0.4.0"
+    MARKETING_VERSION: "0.4.1"
     # yyyyMMddHHmm. scripts/install.sh stamps the minute it builds.
     CURRENT_PROJECT_VERSION: "202611061640"
     SWIFT_VERSION: "5.0"
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_EMIT_LOC_STRINGS: YES
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
-    ARCHS: arm64
-    EXCLUDED_ARCHS: x86_64
+    # Universal: Apple silicon and Intel in one app.
+    ARCHS: "$(ARCHS_STANDARD)"
     MACOSX_DEPLOYMENT_TARGET: "15.0"
     ENABLE_HARDENED_RUNTIME: YES
     CODE_SIGN_IDENTITY: "-"

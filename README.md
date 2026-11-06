@@ -49,7 +49,7 @@ TinyEdit 不包含文件夹管理、项目管理等 IDE 功能。打开文件即
 在 [Releases](../../releases) 页面下载最新版本，将 TinyEdit 拖入“应用程序”文件夹。
 
 - macOS 15 或更高版本。
-- Apple 芯片（M 系列）Mac，暂不支持 Intel Mac。
+- Apple 芯片（M 系列）或 Intel Mac。
 - 单个文件最大 64 MB；超过 2 MB 时仅高亮可见区域，超过 5 MB 时关闭语法高亮与 Markdown 预览。
 
 ## 命令行
