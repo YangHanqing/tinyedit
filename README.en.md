@@ -8,17 +8,21 @@ Open a file to edit it, or start typing without creating a file first. Tabs and 
 
 ![TinyEdit overview](assets/screenshots/overview.png)
 
-## Download and install
-
-Download the latest version from [Releases](../../releases) and drag TinyEdit into Applications.
-
-- macOS 14 or later, on Apple silicon or Intel Mac.
-- Apple Translation requires macOS 15; table recognition in images requires macOS 26.
-- Files up to 64 MB. Above 2 MB, only visible text is highlighted; above 5 MB, highlighting and Markdown preview are disabled.
-
 ## Features
 
 Screenshots use the English interface and dark theme. Both language and appearance can be changed in Settings.
+
+### Editing and files
+
+| Feature | Description | Image |
+| --- | --- | --- |
+| Everyday editing | Tabs, find and replace, word wrap, line numbers, indent guides, matching brackets and selected-word highlighting. Duplicate, move, delete and join lines, or toggle comments. |  |
+| Syntax highlighting | 36 languages and formats, including JSON, Markdown, Python, JavaScript, TypeScript, Swift, SQL and YAML, with automatic detection and manual selection. | <img src="assets/screenshots/syntax-highlighting.png" alt="Syntax highlighting" width="560"> |
+| Session recovery | Tabs, unsaved text, cursor and scroll position are kept automatically. Recovery data is separate from your files; files change only when you save them. |  |
+| Files and encodings | UTF-8, UTF-16 and GB18030 (including GBK / GB2312), with line endings preserved. External file changes and deletions prompt you to choose what to do; reloaded changes are marked beside the line numbers. |  |
+| Folders and windows | Folders open in separate windows, with a sidebar that updates as files change on disk. Drag tabs out to create windows or move them between windows. Each window's tabs, folders and position are restored at the next launch. |  |
+| Finder preview | Select a file in Finder and press Space to preview rendered Markdown or highlighted JSON and code. Single-line JSON is formatted automatically. Markdown images appear as alt text. |  |
+| Appearance and languages | Light, dark or system appearance, multiple app icons and editor backgrounds, and eight interface languages, including English, Simplified and Traditional Chinese, and Japanese. |  |
 
 ### Text tools
 
@@ -32,6 +36,13 @@ Screenshots use the English interface and dark theme. Both language and appearan
 | Text comparison | Compare two tabs, or a tab with a file on disk, and navigate between changes. Differences in encoding, line endings and the final newline are shown separately. Available from a tab's context menu or the command palette. |  |
 | Command palette | Press ⇧⌘P to find commands or switch tabs. Tools include JSON operations, encoding and decoding, line sorting and deduplication, and text cleanup. The palette suggests actions for the current content and dims commands that do not apply. Text tools use the selection, or the whole document when nothing is selected; changes can be undone. | <img src="assets/screenshots/command-palette.png" alt="Command palette" width="560"> |
 
+### Markdown
+
+| Feature | Description | Image |
+| --- | --- | --- |
+| Side-by-side preview | Press ⇧⌘V to read source and preview side by side, or enable preview by default. Supports headings, lists, quotes, tables, code blocks and images, including images inside tables and HTML `<img>` sizing. | <img src="assets/screenshots/markdown-tasks.png" alt="Markdown preview and tasks" width="560"> |
+| Tasks | Write tasks with `- [ ]`, then click a preview checkbox or press ⌘↩ to toggle completion. The status bar tracks progress, and Return continues the list. |  |
+
 ### JSON
 
 | Feature | Description | Image |
@@ -40,25 +51,6 @@ Screenshots use the English interface and dark theme. Both language and appearan
 | Copy values and preview images | Place the cursor on a key or value to copy its path, key or value and see object key counts or array item counts. Copied strings are unescaped. Image links and embedded images can be previewed, copied or saved. | <img src="assets/screenshots/json-values.png" alt="JSON value actions and image preview" width="560"> |
 | Inline annotations and link tools | See dates for timestamps, color swatches and JWT expiry status at the end of a line. Open links, decode content or expand URL query parameters into JSON. |  |
 | Open Value | Open an object, array or ordinary string in a new tab to read longer values separately. Strings are unescaped, and JSON objects or arrays stored inside them are formatted automatically. | <img src="assets/screenshots/json-open-value.png" alt="Open Value in the JSON status bar" width="560"> |
-
-### Markdown
-
-| Feature | Description | Image |
-| --- | --- | --- |
-| Side-by-side preview | Press ⇧⌘V to read source and preview side by side, or enable preview by default. Supports headings, lists, quotes, tables, code blocks and images, including images inside tables and HTML `<img>` sizing. | <img src="assets/screenshots/markdown-tasks.png" alt="Markdown preview and tasks" width="560"> |
-| Tasks | Write tasks with `- [ ]`, then click a preview checkbox or press ⌘↩ to toggle completion. The status bar tracks progress, and Return continues the list. |  |
-
-### Editing and files
-
-| Feature | Description | Image |
-| --- | --- | --- |
-| Everyday editing | Tabs, find and replace, word wrap, line numbers, indent guides, matching brackets and selected-word highlighting. Duplicate, move, delete and join lines, or toggle comments. |  |
-| Syntax highlighting | 36 languages and formats, including JSON, Markdown, Python, JavaScript, TypeScript, Swift, SQL and YAML, with automatic detection and manual selection. | <img src="assets/screenshots/syntax-highlighting.png" alt="Syntax highlighting" width="560"> |
-| Session recovery | Tabs, unsaved text, cursor and scroll position are kept automatically. Recovery data is separate from your files; files change only when you save them. |  |
-| Files and encodings | UTF-8, UTF-16 and GB18030 (including GBK / GB2312), with line endings preserved. External file changes and deletions prompt you to choose what to do; reloaded changes are marked beside the line numbers. |  |
-| Folders and windows | Folders open in separate windows, with a sidebar that updates as files change on disk. Drag tabs out to create windows or move them between windows. Each window's tabs, folders and position are restored at the next launch. |  |
-| Finder preview | Select a file in Finder and press Space to preview rendered Markdown or highlighted JSON and code. Single-line JSON is formatted automatically. Markdown images appear as alt text. |  |
-| Appearance and languages | Light, dark or system appearance, multiple app icons and editor backgrounds, and eight interface languages, including English, Simplified and Traditional Chinese, and Japanese. |  |
 
 ## Command line
 
@@ -74,6 +66,14 @@ curl -s https://api.example.com/items | tinyedit   # view command output in a ne
 ```
 
 Piped text also supports language detection, JSON formatting and terminal color code cleanup. Run `tinyedit -h` for all options.
+
+## Download and install
+
+Download the latest version from [Releases](../../releases) and drag TinyEdit into Applications.
+
+- macOS 14 or later, on Apple silicon or Intel Mac.
+- Apple Translation requires macOS 15; table recognition in images requires macOS 26.
+- Files up to 64 MB. Above 2 MB, only visible text is highlighted; above 5 MB, highlighting and Markdown preview are disabled.
 
 ## Privacy and network access
 
