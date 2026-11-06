@@ -34,7 +34,10 @@ final class AppState {
     }()
 
     // MARK: Observed by SwiftUI (metadata only; never document text, never per-keystroke state)
-    var session = EditorSession()
+    var session = EditorSession() {
+        // A comparison belongs to its tab: any path that selects another tab (or closes it) leaves it.
+        didSet { if let d = diff, d.sourceID != session.selectedBufferID { closeDiff() } }
+    }
     private(set) var settings = EditorSettings.load()
     var status = EditorStatus()
     /// Nil while nothing is selected. Written only when the counts change.
@@ -50,6 +53,10 @@ final class AppState {
     var goToLineFocusToken = 0
     var translationInput: TranslationInput?
     var paletteVisible = false
+    /// Set while the palette lists what to compare this tab with (its Compare With… second step).
+    var paletteCompareSource: UUID?
+    /// Compare With: the read-only comparison shown over the editor. Session-only.
+    var diff: DiffSession?
     /// Set when the palette opens: what the tools would find in the text they would run on.
     var paletteInsights: ToolInsights?
     /// The palette was opened with text selected, so the tools run on the selection.
@@ -109,6 +116,7 @@ final class AppState {
     /// The editor window, set once it exists. Hidden by the red button, never closed.
     @ObservationIgnored weak var window: NSWindow?
     @ObservationIgnored var previewTask: Task<Void, Never>?
+    @ObservationIgnored var diffTask: Task<Void, Never>?
     @ObservationIgnored var selectionStatsTask: Task<Void, Never>?
     @ObservationIgnored var jsonCaretTask: Task<Void, Never>?
     /// Decoding or downloading the picture for `jsonValueCard`.
@@ -337,6 +345,7 @@ final class AppState {
         // runs when paste returns, and a keystroke that finds the card already hidden writes nothing.
         clearPasteSuggestionAfterEdit(id)
         clearJSONValueCardAfterEdit(id)
+        diffTextEdited(id)
     }
 
     /// 300 ms after the last edit, hash off the main thread. May only clear `dirty`, and only if

@@ -155,7 +155,7 @@ private struct CaseToggle: View {
 }
 
 /// A square icon button with the title-bar hover background; dimmed while disabled.
-private struct IconButton: View {
+struct IconButton: View {
     let systemName: String
     let help: String
     var size: CGFloat = 11

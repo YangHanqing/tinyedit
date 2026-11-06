@@ -70,7 +70,8 @@ struct CommandPalette: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        if appState.paletteVisible { CommandPalettePanel() }
+        // A new panel for the Compare With step: its query starts empty and its field takes focus.
+        if appState.paletteVisible { CommandPalettePanel().id(appState.paletteCompareSource) }
     }
 }
 
@@ -109,7 +110,12 @@ private struct CommandPalettePanel: View {
             rows.append(.command(command, id: key, index: command.enabled ? commands.count : nil))
             if command.enabled { commands.append(command) }
         }
-        if query.trimmingCharacters(in: .whitespaces).isEmpty {
+        if appState.paletteCompareSource != nil {
+            let compare = appState.paletteCompareCommands
+            for command in query.trimmingCharacters(in: .whitespaces).isEmpty ? compare : PaletteCommand.filter(compare, query: query) {
+                add(command, key: command.id)
+            }
+        } else if query.trimmingCharacters(in: .whitespaces).isEmpty {
             for section in appState.paletteSections {
                 rows.append(.header(section.title, id: "header." + section.id))
                 for command in section.commands { add(command, key: section.id + "/" + command.id) }
@@ -122,9 +128,10 @@ private struct CommandPalettePanel: View {
 
     @ViewBuilder private var panel: some View {
         let (rows, commands) = layout()
-        let searching = !query.trimmingCharacters(in: .whitespaces).isEmpty
+        let searching = !query.trimmingCharacters(in: .whitespaces).isEmpty && appState.paletteCompareSource == nil
         VStack(spacing: 0) {
-            TextField(appState.paletteOnSelection ? "Run a command on the selection" : "Run a command or find a tab", text: $query)
+            TextField(appState.paletteCompareSource != nil ? "Compare with a tab or a file"
+                      : appState.paletteOnSelection ? "Run a command on the selection" : "Run a command or find a tab", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .padding(10)

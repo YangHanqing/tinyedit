@@ -464,6 +464,7 @@ extension AppState {
             session.closedTabs = Array(session.closedTabs.prefix(EditorSession.maxClosedTabs))
         }
 
+        if diff?.sourceID == id { closeDiff(refocus: false) }
         languageDetectionTasks[id]?.cancel(); languageDetectionTasks[id] = nil
         pasteTasks[id]?.cancel(); pasteTasks[id] = nil; pasteTokens[id] = nil
         curlJobs[id]?.task.cancel(); curlJobs[id] = nil; curlBodies[id] = nil; curlCommands[id] = nil

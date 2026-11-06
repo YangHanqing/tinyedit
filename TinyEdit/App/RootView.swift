@@ -26,6 +26,7 @@ struct RootView: View {
                         ThemeDivider()
                         BannerView()
                         editorSlot
+                            .overlay { DiffView() }
                             .overlay(alignment: .bottom) { ToastView() }
                             .overlay(alignment: .top) { CommandPalette() }
                         ThemeDivider()

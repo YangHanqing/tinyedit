@@ -10,6 +10,7 @@ extension AppState {
     func hidePalette() {
         guard paletteVisible else { return }
         paletteVisible = false
+        paletteCompareSource = nil
         paletteInsightsTask?.cancel()
         paletteInsightsTask = nil
         host.focus()
@@ -60,6 +61,7 @@ extension AppState {
         } + [
             PaletteCommand(id: PaletteCommandID.translateSelection, title: String(localized: "Translate Selection…"), englishTitle: "Translate Selection", keywords: "translation language 翻译", category: String(localized: "Translation")) { [weak self] in self?.presentTranslation() },
             PaletteCommand(id: PaletteCommandID.translateDocument, title: String(localized: "Translate Document…"), englishTitle: "Translate Document", keywords: "translation language 翻译", category: String(localized: "Translation")) { [weak self] in self?.presentTranslation(wholeDocument: true) },
+            PaletteCommand(id: "compareWith", title: String(localized: "Compare With…"), englishTitle: "Compare With", keywords: "diff difference compare 比较 对比 差异", category: String(localized: "Compare")) { [weak self] in self?.showComparePalette() },
             PaletteCommand(id: PaletteCommandID.sendCurl, title: String(localized: "Send curl Request"), englishTitle: "Send curl Request", keywords: "http request api run execute 发送 请求 接口", category: "HTTP") { [weak self] in self?.sendCurlAtCursor() }
         ]
         guard let disabled = paletteInsights?.disabled, !disabled.isEmpty else { return commands }

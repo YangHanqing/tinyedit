@@ -150,6 +150,8 @@ struct TabBar: View {
             .disabled(appState.tabsToClose(.right, around: id).isEmpty)
         Button("Close All Tabs") { appState.closeTabs(.all, around: id) }
         Divider()
+        compareMenu(for: id)
+        Divider()
         Button("Move Tab to New Window") { Task { await Workspaces.shared.detachTab(id) } }
         if buffer.isUntitled {
             Divider()
@@ -160,6 +162,19 @@ struct TabBar: View {
             Divider()
             Button("Copy Path") { appState.copyPath(of: id) }.disabled(!located)
             Button("Reveal in Finder") { appState.revealInFinder(id) }.disabled(!located)
+        }
+    }
+
+    /// Compare With: another tab (unsaved text included) or a file read from disk. Never the tab itself.
+    @ViewBuilder private func compareMenu(for id: UUID) -> some View {
+        let others = appState.compareCandidates(for: id)
+        let titles = TabMenuTitles.make(appState.session.orderedBuffers)
+        Menu("Compare With") {
+            ForEach(others) { other in
+                Button(titles[other.id] ?? other.displayTitle) { appState.compare(id, with: .tab(other.id)) }
+            }
+            if !others.isEmpty { Divider() }
+            Button("Choose File…") { appState.chooseFileToCompare(id) }
         }
     }
 

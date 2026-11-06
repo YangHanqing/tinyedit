@@ -4,7 +4,8 @@ import AppKit
 /// An end-to-end run of the windows, sidebar and tab moves in the real app: `--e2e 1` builds a session (folder
 /// windows, opened files, moved tabs, a closed window) and quits through the normal Quit path; `--e2e 2`, launched
 /// afterwards, checks what came back. Everything lives in the container's temp folder (`TinyEdit-e2e`), never in
-/// the real session. Results go to `report.txt` and window pictures to PNGs in `out/`. Debug builds only.
+/// the real session. Results go to `report.txt` and window pictures to PNGs in `out/`. `--e2e 3` is a run of its
+/// own for Compare With (tabs, unsaved text, files on disk, navigation, closing). Debug builds only.
 @MainActor
 enum EndToEnd {
     static var phase: Int? {
@@ -23,6 +24,10 @@ enum EndToEnd {
     static func prepare() {
         guard let phase else { return }
         let fm = FileManager.default
+        if phase == 3 {
+            try? fm.removeItem(at: base)
+            try? fm.createDirectory(at: root, withIntermediateDirectories: true)
+        }
         if phase == 1 {
             try? fm.removeItem(at: base)
             try? fm.createDirectory(at: root, withIntermediateDirectories: true)
@@ -67,7 +72,11 @@ enum EndToEnd {
         guard let phase else { return }
         Task {
             await settle(600)
-            if phase == 1 { await phase1() } else { await phase2() }
+            switch phase {
+            case 1: await phase1()
+            case 3: await phaseDiff()
+            default: await phase2()
+            }
             lines.append(failures == 0 ? "ALL PASSED" : "\(failures) FAILED")
             let report = out.appendingPathComponent("report-\(phase).txt")
             try? lines.joined(separator: "\n").appending("\n").write(to: report, atomically: true, encoding: .utf8)
@@ -279,6 +288,203 @@ enum EndToEnd {
         if let id = main.session.orderedBuffers.first(where: { main.stores[$0.id]?.logicalString() == "draft from a closed window" })?.id {
             main.removeBuffer(id)
         }
+    }
+
+    // MARK: Phase 3: Compare With
+
+    private static func phaseDiff() async {
+        let main = Workspaces.shared.main
+        check(await wait { main.launchGateOpen && main.window != nil }, "main window up")
+        let dir = base.appendingPathComponent("Diff", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let original = (1...40).map { "line \($0)" }.joined(separator: "\n") + "\n"
+        let fileA = dir.appendingPathComponent("a.txt")
+        try? original.write(to: fileA, atomically: true, encoding: .utf8)
+        // The same text as GB18030 with CRLF, and a file of the same name in another folder.
+        let gb = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))
+        let crlf = dir.appendingPathComponent("crlf.txt")
+        try? ("中文\n" + original).replacingOccurrences(of: "\n", with: "\r\n").data(using: gb)?.write(to: crlf)
+        let other = dir.appendingPathComponent("sub", isDirectory: true)
+        try? FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        let sameName = other.appendingPathComponent("a.txt")
+        try? original.replacingOccurrences(of: "line 20\n", with: "").write(to: sameName, atomically: true, encoding: .utf8)
+        let diskHash = { ContentHash.sha256Hex((try? Data(contentsOf: fileA)) ?? Data()) }
+        let hashBefore = diskHash()
+
+        await main.openURLsAsync([fileA])
+        guard let aID = main.session.orderedBuffers.first(where: { $0.title == "a.txt" })?.id, let aStore = main.stores[aID] else {
+            return check(false, "a.txt opened")
+        }
+        // Unsaved edits in the file tab: line 5 changed, line 30 removed, a line added at the end.
+        await settle()   // the text view takes the tab's text on SwiftUI's next update
+        main.host.focus()
+        func replace(_ find: String, with text: String) {
+            let r = (aStore.logicalString() as NSString).range(of: find)
+            main.host.textView.setSelectedRange(r)
+            main.host.textView.insertText(text, replacementRange: r)
+        }
+        replace("line 5\n", with: "line five\n")
+        replace("line 30\n", with: "")
+        replace("line 40\n", with: "line 40\nline 41\n")
+        main.host.textView.setSelectedRange(NSRange(location: 3, length: 4))
+        let editedText = aStore.logicalString()
+        let generation = aStore.generation
+        check(main.isDirtyNow(aID), "a.txt has unsaved edits")
+
+        // An Untitled tab holding the original text.
+        main.newTab()
+        guard let uID = main.session.selectedBufferID, uID != aID else { return check(false, "untitled tab") }
+        await settle()
+        main.host.textView.insertText(original, replacementRange: NSRange(location: 0, length: 0))
+        main.selectTab(aID)
+        await settle()
+        main.host.textView.setSelectedRange(NSRange(location: 3, length: 4))
+
+        check(!main.compareCandidates(for: aID).contains { $0.id == aID }, "a tab is never offered to compare with itself")
+        main.compare(aID, with: .tab(aID))
+        await settle(200)
+        check(main.diff == nil, "comparing a tab with itself does nothing")
+
+        // Tab with unsaved text against an Untitled tab.
+        main.compare(aID, with: .tab(uID))
+        check(await wait { main.diff?.result != nil }, "comparison of two tabs computed")
+        guard let r = main.diff?.result else { return }
+        note("rows: " + r.lines.map { "\($0.kind)\($0.oldNumber ?? 0)/\($0.newNumber ?? 0)" }.joined(separator: " "))
+        check(r.changes.count == 3, "three changes (\(r.changes.count))")
+        guard r.changes.count == 3 else { return }
+        check(r.added == 2 && r.removed == 2, "+2 −2 from a.txt's edited text to the original (+\(r.added) −\(r.removed))")
+        let first = r.lines[r.changes[0]]
+        check(first.map(\.kind) == [.removed, .added] && first.first?.text == "line five" && first.last?.text == "line 5",
+              "a modified line is a removed line then an added one")
+        check(first.first?.changed == NSRange(location: 5, length: 4) && first.last?.changed == NSRange(location: 5, length: 1),
+              "and the changed part of each is marked")
+        check(r.lines.first?.kind == .context && r.lines.contains { $0.kind == .gap && $0.hidden > 0 }, "unchanged runs are folded with context kept")
+        check(r.lines[r.changes[2]].map(\.text) == ["line 41"], "only-removed last change")
+        check(main.diff?.old.title == "a.txt" && main.diff?.old.directory == nil, "header names the tab")
+        await settle(500)
+        snapshot(main.window, "diff-1-tabs")
+
+        // Navigation wraps around.
+        check(main.diff?.current == 0, "starts at the first change")
+        main.stepDiff(1); main.stepDiff(1)
+        check(main.diff?.current == 2, "Next moves on")
+        main.stepDiff(1)
+        check(main.diff?.current == 0, "Next wraps to the first")
+        main.stepDiff(-1)
+        check(main.diff?.current == 2, "Previous wraps to the last")
+        await settle(300)
+        snapshot(main.window, "diff-2-last-change")
+
+        // Copy holds only the text, not line numbers or signs.
+        if let tv = findDiffTextView(in: main.window?.contentView) {
+            tv.setSelectedRange(NSRange(location: 0, length: (tv.string as NSString).length))
+            // Copy as the menu sends it; the user's clipboard text is put back afterwards.
+            let board = NSPasteboard.general
+            let saved = board.string(forType: .string)
+            tv.copy(nil)
+            let copied = board.string(forType: .string) ?? ""
+            if let saved { board.clearContents(); board.setString(saved, forType: .string) }
+            note("copied \(copied.prefix(60).debugDescription), responder \(String(describing: main.window?.firstResponder.map { type(of: $0) }))")
+            check(copied.hasPrefix("line 1\nline 2\nline 3\nline 4\nline five\nline 5"), "copying the diff gives the lines themselves")
+            check(main.window?.firstResponder === tv, "the diff takes the keyboard")
+        } else {
+            check(false, "diff text view on screen")
+        }
+
+        // Done: the editor is as it was.
+        main.closeDiff()
+        check(main.diff == nil, "Done closes it")
+        check(aStore.logicalString() == editedText && aStore.generation == generation, "the tab's text was not touched")
+        check(main.host.textView.selectedRange() == NSRange(location: 3, length: 4), "nor its selection")
+        check(main.session.buffers[aID]?.dirty == true && main.isDirtyNow(aID), "and it is still unsaved")
+        check(diskHash() == hashBefore, "the file on disk is unchanged")
+
+        // Against the file on disk: the tab's unsaved edits are the differences.
+        main.compare(aID, with: .file(fileA))
+        check(await wait { main.diff?.result != nil }, "tab against its own file on disk")
+        check(main.diff?.result?.changes.count == 3 && main.diff?.new.fromDisk == true, "shows the unsaved edits")
+        check(main.session.orderedBuffers.filter { $0.title == "a.txt" }.count == 1, "no tab opened for the file")
+
+        // Same name in another folder: directories are shown.
+        main.compare(aID, with: .file(sameName))
+        check(await wait { main.diff?.result != nil && main.diff?.fileURL == sameName }, "same-named file compared")
+        check(main.diff?.old.directory != nil && main.diff?.new.directory != nil, "same names show their folders")
+
+        // Edited while shown: marked out of date, Refresh compares again.
+        main.compare(aID, with: .tab(uID))
+        check(await wait { main.diff?.result != nil }, "compared again")
+        aStore.textStorage.replaceCharacters(in: NSRange(location: 0, length: 0), with: "x")
+        check(main.diff?.stale == true, "an edit marks the comparison out of date")
+        main.refreshDiff()
+        check(await wait { main.diff?.result != nil && main.diff?.stale == false }, "Refresh compares the current text")
+        aStore.textStorage.replaceCharacters(in: NSRange(location: 0, length: 1), with: "")
+
+        // Selecting another tab leaves the comparison.
+        main.selectTab(uID)
+        check(main.diff == nil, "switching tabs closes the comparison")
+
+        // Different encoding and line endings, same text: no differences once decoded.
+        main.newTab()
+        guard let gID = main.session.selectedBufferID else { return }
+        await settle()
+        main.host.textView.insertText("中文\n" + original, replacementRange: NSRange(location: 0, length: 0))
+        main.compare(gID, with: .file(crlf))
+        check(await wait { main.diff?.result != nil }, "GB18030 CRLF file compared")
+        check(main.diff?.result?.isIdentical == true, "identical after decoding: No Differences")
+        note("notes: \(main.diff?.notes ?? [])")
+        check(main.diff?.notes.count == 2, "encoding and line ending differences are noted")
+        await settle(300)
+        snapshot(main.window, "diff-3-identical")
+
+        // Empty against non-empty: everything added.
+        main.newTab()
+        guard let eID = main.session.selectedBufferID else { return }
+        await settle()
+        main.compare(eID, with: .tab(uID))
+        check(await wait { main.diff?.result != nil }, "empty tab compared")
+        note("empty: +\(main.diff?.result?.added ?? -1) −\(main.diff?.result?.removed ?? -1) changes \(main.diff?.result?.changes.count ?? -1), source text \(main.stores[eID]?.length ?? -1), u text \(main.stores[uID]?.length ?? -1)")
+        check(main.diff?.sourceID == eID && main.diff?.result?.added == 40 && main.diff?.result?.removed == 0 && main.diff?.result?.changes.count == 1,
+              "empty against 40 lines: one change, all added")
+        // Closing the source tab closes the comparison.
+        main.removeBuffer(eID)
+        check(main.diff == nil, "closing the tab closes its comparison")
+
+        // A missing file: a clear message, no comparison.
+        main.selectTab(aID)
+        await settle()
+        main.compare(aID, with: .file(dir.appendingPathComponent("nope.txt")))
+        check(await wait { main.toast != nil }, "a missing file says so")
+        note("toast: \(main.toast?.text ?? "")")
+        check(main.diff == nil, "and shows no comparison")
+
+        // The command palette's second step.
+        main.showComparePalette()
+        check(await wait { main.paletteVisible && main.paletteCompareSource == aID }, "palette Compare With… lists targets")
+        let targets = main.paletteCompareCommands.map(\.id)
+        check(!targets.contains("compare." + aID.uuidString) && targets.contains("compare." + uID.uuidString) && targets.last == "compare.file",
+              "other tabs and Choose File…, never the tab itself")
+        await settle(300)
+        snapshot(main.window, "diff-4-palette")
+        main.paletteCompareCommands.first { $0.id == "compare." + uID.uuidString }?.action()
+        check(await wait { main.diff?.result != nil } && !main.paletteVisible, "choosing a tab there compares")
+        main.closeDiff()
+
+        // Too much to align: one change. Too large: refused.
+        let many = TextDiff.make(old: (0..<3000).map { "a\($0)" }.joined(separator: "\n"),
+                                 new: (0..<3000).map { "b\($0)" }.joined(separator: "\n"))
+        check(many?.aligned == false && many?.changes.count == 1, "past the edit limit the middle is one change")
+        check(TextDiff.make(old: String(repeating: "x", count: TextDiff.sizeLimit + 1), new: "") == nil, "over 8 MB is refused")
+
+        check(diskHash() == hashBefore, "a.txt on disk never changed")
+        // Leave nothing for the next run's session.
+        for id in main.session.tabOrder { main.removeBuffer(id, rememberClosed: false) }
+    }
+
+    private static func findDiffTextView(in view: NSView?) -> DiffTextView? {
+        guard let view else { return nil }
+        if let v = view as? DiffTextView { return v }
+        for sub in view.subviews { if let v = findDiffTextView(in: sub) { return v } }
+        return nil
     }
 
     // MARK: Helpers

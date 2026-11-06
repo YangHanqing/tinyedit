@@ -61,6 +61,12 @@ enum Theme {
     static let changeModified = dynamic("changeModified", light: 0x2F6BED, dark: 0x7AA2FF)
     static let changeDeleted = dynamic("changeDeleted", light: 0xCF222E, dark: 0xF85149)
 
+    // MARK: Compare With (unified diff rows, and the changed part of a paired line)
+    static let diffAddedBackground = dynamic("diffAddedBackground", light: 0xE7F6EA, dark: 0x1F3326)
+    static let diffAddedHighlight = dynamic("diffAddedHighlight", light: 0xB4E5BF, dark: 0x2F5C3B)
+    static let diffRemovedBackground = dynamic("diffRemovedBackground", light: 0xFCEBEC, dark: 0x3A2427)
+    static let diffRemovedHighlight = dynamic("diffRemovedHighlight", light: 0xF5BEC2, dark: 0x6B3037)
+
     /// Blanks outside the selection while Show Invisible Characters is on.
     static let whitespaceMarkerFaint = dynamic("whitespaceMarkerFaint", light: 0xC2C4CA, dark: 0x4A4C54)
 
@@ -141,6 +147,8 @@ extension Color {
     static let warning = Color(nsColor: Theme.warning)
     static let error = Color(nsColor: Theme.error)
     static let success = Color(nsColor: Theme.success)
+    static let changeAdded = Color(nsColor: Theme.changeAdded)
+    static let changeDeleted = Color(nsColor: Theme.changeDeleted)
 }
 
 /// 1 pt hairline in the `separator` token; replaces `Divider()` in the window chrome.
