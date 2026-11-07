@@ -83,6 +83,11 @@ private struct GeneralSettingsPane: View {
                     Text(verbatim: "\(Self.bundleValue("CFBundleShortVersionString")) (\(Self.bundleValue("CFBundleVersion")))")
                         .textSelection(.enabled)
                 }
+                Toggle("Check for updates automatically", isOn: appState.setting(\.checkForUpdates))
+                Button("Check Now") { UpdateChecker.checkNow() }
+            } footer: {
+                Text("Once every 30 days TinyEdit asks GitHub for its latest release. Nothing about you or your files is sent.")
+                    .settingsFootnote()
             }
         }
     }

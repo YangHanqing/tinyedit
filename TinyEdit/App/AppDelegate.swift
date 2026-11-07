@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         EndToEnd.run()
         #endif
+        UpdateChecker.scheduleLaunchCheck()
         // ⌘T opens a tab like ⌘N (New Window is ⇧⌘N). SwiftUI menus cannot hold a hidden second shortcut.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -87,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     func applicationDidBecomeActive(_ notification: Notification) {
         for window in Workspaces.shared.all { window.refreshFolderLocations() }
+        UpdateChecker.checkIfDue()
         let state = Workspaces.shared.target
         guard !state.isMain else { return }
         Task { await state.checkSelectedFileForExternalChanges() }

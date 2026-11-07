@@ -88,6 +88,8 @@ struct EditorSettings: Equatable, Sendable {
     }
     /// A pasted curl command offers to send the request it describes.
     var recognizeCurlCommands = true
+    /// Ask GitHub for a newer release once every 30 days (`UpdateChecker`).
+    var checkForUpdates = true
     /// JSON value marks after their lines (`JSONMarkOptions`).
     var jsonMarkImages = true
     var jsonMarkLinks = true
@@ -136,6 +138,7 @@ struct EditorSettings: Equatable, Sendable {
         static let recognizeDocumentTables = "tinyedit.recognizeDocumentTables"
         static let recognizeTextInImages = "tinyedit.recognizeTextInImages"
         static let recognizeCurlCommands = "tinyedit.recognizeCurlCommands"
+        static let checkForUpdates = "tinyedit.checkForUpdatesAutomatically"
         static let jsonMarkImages = "tinyedit.jsonMarkImages"
         static let jsonMarkLinks = "tinyedit.jsonMarkLinks"
         static let jsonMarkColors = "tinyedit.jsonMarkColors"
@@ -176,6 +179,7 @@ struct EditorSettings: Equatable, Sendable {
         if d.object(forKey: Key.recognizeCurlCommands) != nil {
             s.recognizeCurlCommands = d.bool(forKey: Key.recognizeCurlCommands)
         }
+        if d.object(forKey: Key.checkForUpdates) != nil { s.checkForUpdates = d.bool(forKey: Key.checkForUpdates) }
         if d.object(forKey: Key.jsonMarkImages) != nil { s.jsonMarkImages = d.bool(forKey: Key.jsonMarkImages) }
         if d.object(forKey: Key.jsonMarkLinks) != nil { s.jsonMarkLinks = d.bool(forKey: Key.jsonMarkLinks) }
         if d.object(forKey: Key.jsonMarkColors) != nil { s.jsonMarkColors = d.bool(forKey: Key.jsonMarkColors) }
@@ -228,6 +232,7 @@ struct EditorSettings: Equatable, Sendable {
         d.set(recognizeDocumentTables, forKey: Key.recognizeDocumentTables)
         d.set(recognizeTextInImages, forKey: Key.recognizeTextInImages)
         d.set(recognizeCurlCommands, forKey: Key.recognizeCurlCommands)
+        d.set(checkForUpdates, forKey: Key.checkForUpdates)
         d.set(jsonMarkImages, forKey: Key.jsonMarkImages)
         d.set(jsonMarkLinks, forKey: Key.jsonMarkLinks)
         d.set(jsonMarkColors, forKey: Key.jsonMarkColors)

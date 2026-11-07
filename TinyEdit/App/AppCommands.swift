@@ -8,6 +8,7 @@ struct AppCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
             Button("About TinyEdit") { Self.showAboutPanel() }
+            Button("Check for Updates…") { UpdateChecker.checkNow() }
         }
         CommandGroup(replacing: .newItem) {
             // ⌘T does the same through AppDelegate, without a second menu item.
