@@ -16,7 +16,7 @@ Screenshots use the English interface and dark theme. Both language and appearan
 
 | Feature | Description | Image |
 | --- | --- | --- |
-| Everyday editing | Tabs, find and replace, word wrap, line numbers, indent guides, matching brackets and selected-word highlighting. Duplicate, move, delete and join lines, or toggle comments. |  |
+| Everyday editing | Tabs (pin the ones you keep, close every unmodified tab at once, Save All with ⌥⌘S), find and replace, word wrap, line numbers, indent guides, matching brackets and selected-word highlighting. Duplicate, move, delete and join lines, or toggle comments. |  |
 | Syntax highlighting | 36 languages and formats, including JSON, Markdown, Python, JavaScript, TypeScript, Swift, SQL and YAML, with automatic detection and manual selection. | <img src="assets/screenshots/syntax-highlighting.png" alt="Syntax highlighting" width="560"> |
 | Session recovery | Tabs, unsaved text, cursor and scroll position are kept automatically. Recovery data is separate from your files; files change only when you save them. |  |
 | Files and encodings | UTF-8, UTF-16 and GB18030 (including GBK / GB2312), with line endings preserved. External file changes and deletions prompt you to choose what to do; reloaded changes are marked beside the line numbers. |  |

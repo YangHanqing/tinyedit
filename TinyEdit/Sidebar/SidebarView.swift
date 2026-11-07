@@ -175,6 +175,9 @@ private struct FileTreeRowView: View {
             pasteboard.setString(node.path, forType: .string)
             appState.showToast(String(localized: "Copied"))
         }
+        if row.rootID == nil, let relative = appState.relativePath(ofPath: node.path) {
+            Button("Copy Relative Path") { appState.copyRelativePath(relative) }
+        }
         Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([node.url]) }
         if let id = row.rootID {
             Divider()

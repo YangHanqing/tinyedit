@@ -186,6 +186,9 @@ struct TabBar: View {
             let located = appState.fileURLs[id] != nil
             Divider()
             Button("Copy Path") { appState.copyPath(of: id) }.disabled(!located)
+            if let relative = appState.relativePath(of: id) {
+                Button("Copy Relative Path") { appState.copyRelativePath(relative) }
+            }
             Button("Reveal in Finder") { appState.revealInFinder(id) }.disabled(!located)
         }
     }

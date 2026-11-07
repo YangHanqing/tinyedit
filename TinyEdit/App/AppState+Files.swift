@@ -502,6 +502,25 @@ extension AppState {
         showToast(String(localized: "Copied"))
     }
 
+    /// The file's path inside the deepest of this window's folders that holds it, without the folder's name.
+    /// Nil when no folder holds it.
+    func relativePath(of id: UUID) -> String? {
+        fileURLs[id].flatMap { relativePath(ofPath: $0.standardizedFileURL.resolvingSymlinksInPath().path) }
+    }
+
+    func relativePath(ofPath path: String) -> String? {
+        guard let folder = folders.filter({ !$0.unavailable && $0.path != path && $0.contains(path) })
+            .max(by: { $0.path.count < $1.path.count }) else { return nil }
+        return String(path.dropFirst(folder.path.count).drop { $0 == "/" })
+    }
+
+    func copyRelativePath(_ path: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(path, forType: .string)
+        showToast(String(localized: "Copied"))
+    }
+
     func revealInFinder(_ id: UUID) {
         guard let url = fileURLs[id] else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
