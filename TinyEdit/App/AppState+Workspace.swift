@@ -232,7 +232,7 @@ extension AppState {
     }
 
     /// The narrowest the editor side may get: the editor, and the preview beside it when it shows.
-    var editorMinWidth: Double { SidebarLayout.paneMinWidth * (previewVisible ? 2 : 1) }
+    var editorMinWidth: Double { SidebarLayout.paneMinWidth * (previewVisible && !previewFull ? 2 : 1) }
 
     /// One step of a divider drag. Dragging under `SidebarLayout.collapseBelow` hides the sidebar, and dragging
     /// back out in the same drag shows it again.

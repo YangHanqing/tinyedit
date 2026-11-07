@@ -9,6 +9,7 @@ extension AppState {
     private var liveText: NSMutableString? { activeStore?.textStorage.mutableString }
 
     func showFind(replace: Bool) {
+        leaveFullPreview()
         let sel = host.textView.selectedRange()
         if sel.length > 0, sel.length < 1000, let ns = liveText {
             let s = ns.substring(with: sel)

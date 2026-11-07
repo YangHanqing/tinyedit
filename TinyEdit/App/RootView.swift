@@ -84,10 +84,15 @@ struct RootView: View {
                     }
                 }
                 .frame(minWidth: SidebarLayout.paneMinWidth)
-            if appState.previewVisible {
+            if appState.previewVisible && !appState.previewFull {
                 MarkdownPreview().frame(minWidth: SidebarLayout.paneMinWidth)
             }
         }
+        // Preview Only covers the editor rather than replacing it, so the one EditorView stays.
+        .overlay {
+            if appState.previewFull { MarkdownPreview() }
+        }
+        .onChange(of: appState.previewFull, initial: true) { _, _ in appState.applyPreviewConcealment() }
     }
 }
 

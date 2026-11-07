@@ -20,6 +20,14 @@ struct TitleBar: View {
                     TitleBarButton(symbol: "sidebar.left", help: String(localized: "Sidebar (⌃⌘S)"),
                                    active: appState.sidebarVisible) { appState.toggleSidebar() }
                 }
+                if buffer?.language == .markdown && appState.previewVisible {
+                    // Only while the preview shows: the layout matters only then.
+                    let full = appState.previewFull
+                    TitleBarButton(symbol: full ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                                   help: full ? String(localized: "Show Editor Beside Preview")
+                                              : String(localized: "Preview Only"),
+                                   active: false) { appState.togglePreviewLayout() }
+                }
                 if buffer?.language == .markdown {
                     TitleBarButton(symbol: appState.previewVisible ? "eye.fill" : "eye",
                                    help: String(localized: "Markdown Preview (⇧⌘V)"),

@@ -34,6 +34,41 @@ final class EditorSlotTests: XCTestCase {
         }
     }
 
+    /// Preview Only covers the editor: the text view underneath must not take the keyboard until it shows again.
+    func testPreviewOnlyKeepsTypingOutOfTheHiddenEditor() async throws {
+        let state = AppState.shared
+        for _ in 0..<100 where !state.launchGateOpen { try await Task.sleep(for: .milliseconds(50)) }
+        let window = try XCTUnwrap(state.window)
+        let saved = state.settings
+        XCTAssertTrue(state.openTranslationTab("# Title"))
+        let id = try XCTUnwrap(state.session.selectedBufferID)
+        defer { state.updateSettings(saved); state.removeBuffer(id) }
+        state.setLanguage(.markdown)
+        spin(0.3)
+        window.makeFirstResponder(state.host.textView)
+
+        state.togglePreviewLayout()   // hidden → Preview Only
+        spin(0.3)
+        XCTAssertTrue(state.previewFull)
+        XCTAssertFalse(window.firstResponder === state.host.textView)
+        state.host.focus()
+        XCTAssertFalse(window.firstResponder === state.host.textView)
+
+        state.showGoToLine()          // acts on the text, so the editor comes back
+        spin(0.3)
+        XCTAssertFalse(state.previewVisible)
+        XCTAssertEqual(state.settings.markdownPreviewLayout, .full, "the layout is kept for the next ⇧⌘V")
+        state.hideGoToLine()
+        state.togglePreview()
+        spin(0.3)
+        XCTAssertTrue(state.previewFull)
+        state.togglePreviewLayout()   // Preview Only → side by side
+        spin(0.3)
+        XCTAssertTrue(state.previewVisible)
+        XCTAssertFalse(state.previewFull)
+        XCTAssertTrue(window.firstResponder === state.host.textView)
+    }
+
     func testCommandPaletteFocusesSearchAndRestoresEditorAfterDismissal() async throws {
         let state = AppState.shared
         for _ in 0..<100 where !state.launchGateOpen { try await Task.sleep(for: .milliseconds(50)) }

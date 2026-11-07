@@ -96,6 +96,9 @@ struct AppCommands: Commands {
             Divider()
             Button("Toggle Markdown Preview") { appState.togglePreview() }
                 .keyboardShortcut(AppShortcut.markdownPreview)
+            Toggle("Markdown Preview Only", isOn: Binding(get: { appState.previewFull },
+                                                         set: { _ in appState.togglePreviewLayout() }))
+                .disabled(appState.selectedBuffer?.language != .markdown)
             Button("Clear Change Markers") { appState.clearChangeMarkers() }
             Toggle("Word Wrap", isOn: Binding(get: { appState.settings.wordWrap },
                                               set: { v in var n = appState.settings; n.wordWrap = v; appState.updateSettings(n) }))

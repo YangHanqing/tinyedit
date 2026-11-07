@@ -36,6 +36,19 @@ enum BackgroundPattern: String, CaseIterable, Sendable {
     }
 }
 
+/// How an open Markdown preview shares the editor slot: beside the text, or over all of it.
+enum MarkdownPreviewLayout: String, CaseIterable, Sendable {
+    case split
+    case full
+
+    var label: String {
+        switch self {
+        case .split: String(localized: "Side by Side")
+        case .full: String(localized: "Preview Only")
+        }
+    }
+}
+
 /// Where a cursor-line math ghost may appear. Code languages never calculate, whatever this is.
 enum InlineCalculationMode: String, CaseIterable, Sendable {
     case off
@@ -75,6 +88,8 @@ struct EditorSettings: Equatable, Sendable {
     var showInvisibles = false
     /// Markdown tabs open with the preview beside the text until the user toggles it in that tab.
     var markdownPreviewByDefault = false
+    /// Every window's preview takes this layout; the title bar's expand button and View ▸ Preview Only switch it.
+    var markdownPreviewLayout = MarkdownPreviewLayout.split
     /// On Save, before writing. Markdown and Diff keep theirs (a Markdown line break, a blank context line).
     var trimTrailingWhitespaceOnSave = false
     var ensureFinalNewline = false
@@ -133,6 +148,7 @@ struct EditorSettings: Equatable, Sendable {
         static let showIndentGuides = "tinyedit.showIndentGuides"
         static let showInvisibles = "tinyedit.showInvisibles"
         static let markdownPreviewByDefault = "tinyedit.markdownPreviewByDefault"
+        static let markdownPreviewLayout = "tinyedit.markdownPreviewLayout"
         static let trimTrailingWhitespaceOnSave = "tinyedit.trimTrailingWhitespaceOnSave"
         static let ensureFinalNewline = "tinyedit.ensureFinalNewline"
         static let recognizeDocumentTables = "tinyedit.recognizeDocumentTables"
@@ -169,6 +185,9 @@ struct EditorSettings: Equatable, Sendable {
         if d.object(forKey: Key.showIndentGuides) != nil { s.showIndentGuides = d.bool(forKey: Key.showIndentGuides) }
         if d.object(forKey: Key.showInvisibles) != nil { s.showInvisibles = d.bool(forKey: Key.showInvisibles) }
         s.markdownPreviewByDefault = d.bool(forKey: Key.markdownPreviewByDefault)
+        if let raw = d.string(forKey: Key.markdownPreviewLayout), let layout = MarkdownPreviewLayout(rawValue: raw) {
+            s.markdownPreviewLayout = layout
+        }
         if d.object(forKey: Key.trimTrailingWhitespaceOnSave) != nil {
             s.trimTrailingWhitespaceOnSave = d.bool(forKey: Key.trimTrailingWhitespaceOnSave)
         }
@@ -227,6 +246,7 @@ struct EditorSettings: Equatable, Sendable {
         d.set(showIndentGuides, forKey: Key.showIndentGuides)
         d.set(showInvisibles, forKey: Key.showInvisibles)
         d.set(markdownPreviewByDefault, forKey: Key.markdownPreviewByDefault)
+        d.set(markdownPreviewLayout.rawValue, forKey: Key.markdownPreviewLayout)
         d.set(trimTrailingWhitespaceOnSave, forKey: Key.trimTrailingWhitespaceOnSave)
         d.set(ensureFinalNewline, forKey: Key.ensureFinalNewline)
         d.set(recognizeDocumentTables, forKey: Key.recognizeDocumentTables)

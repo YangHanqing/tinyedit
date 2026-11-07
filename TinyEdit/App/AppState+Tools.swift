@@ -246,6 +246,43 @@ extension AppState {
         return b.language == .markdown && (b.markdownPreviewVisible ?? settings.markdownPreviewByDefault)
     }
 
+    /// The preview covers the whole editor slot, and the text view underneath must not take keys.
+    var previewFull: Bool { previewVisible && settings.markdownPreviewLayout == .full }
+
+    /// The title bar's expand button and View ▸ Preview Only: switches the layout every window's preview
+    /// takes (a setting, so it is remembered) and shows this tab's preview if it was hidden.
+    func togglePreviewLayout() {
+        guard let id = session.selectedBufferID, session.buffers[id]?.language == .markdown else { return }
+        var s = settings
+        s.markdownPreviewLayout = previewFull ? .split : .full
+        if !previewVisible {
+            s.markdownPreviewLayout = .full
+            session.buffers[id]?.markdownPreviewVisible = true
+            schedulePreview(delay: .zero)
+            flushImmediately()
+        }
+        updateSettings(s)
+    }
+
+    /// Find, Go to Line and the line commands act on the text, so they bring the editor back first.
+    func leaveFullPreview() {
+        guard previewFull else { return }
+        togglePreview()
+    }
+
+    /// Keeps the hidden text view out of the key chain while the preview covers it; called on every change
+    /// of `previewFull` (tab switch, toggle, layout, settings).
+    func applyPreviewConcealment() {
+        let full = previewFull
+        guard host.textView.isConcealed != full else { return }
+        host.textView.isConcealed = full
+        if full {
+            if window?.firstResponder === host.textView { window?.makeFirstResponder(nil) }
+        } else if diff == nil && !paletteVisible {
+            host.focus()
+        }
+    }
+
     /// 200 ms debounce, parsed off the main thread, dropped if the generation moved on.
     func schedulePreview(delay: Duration = .milliseconds(200)) {
         previewTask?.cancel()

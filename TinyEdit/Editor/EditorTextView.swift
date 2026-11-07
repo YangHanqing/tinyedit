@@ -3,6 +3,9 @@ import AppKit
 final class EditorTextView: NSTextView {
     /// Per-buffer undo manager. AppKit must not swap in the window's manager.
     weak var bufferUndoManager: UndoManager?
+    /// A full-width Markdown preview covers the editor: typing must not reach the text nobody can see.
+    var isConcealed = false
+    override func becomeFirstResponder() -> Bool { isConcealed ? false : super.becomeFirstResponder() }
     var tabWidth = 4
     /// Called when the view enters a window so the host can reapply the configuration.
     var onMovedToWindow: (() -> Void)?

@@ -10,6 +10,7 @@ extension AppState {
     /// Edit ▸ Line, Toggle Comment and Toggle Task act on the editor. ⌥↑ / ⌥↓ typed into another text field (find,
     /// go to line) keep their usual meaning there instead.
     func runLineCommand(_ command: LineCommand) {
+        leaveFullPreview()
         let tv = host.textView
         if let field = window?.firstResponder as? NSTextView, field !== tv {
             switch command {
@@ -51,6 +52,7 @@ extension AppState {
     }
 
     func showGoToLine() {
+        leaveFullPreview()
         if find.visible { hideFind() }
         goToLineVisible = true
         goToLineFocusToken += 1

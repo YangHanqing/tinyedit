@@ -143,6 +143,9 @@ private struct EditorSettingsPane: View {
             Toggle("Highlight other occurrences of selected text", isOn: appState.setting(\.highlightSelectionOccurrences))
             Toggle("Show invisible characters", isOn: appState.setting(\.showInvisibles))
             Toggle("Show Markdown preview by default", isOn: appState.setting(\.markdownPreviewByDefault))
+            Picker("Markdown preview layout", selection: appState.setting(\.markdownPreviewLayout)) {
+                ForEach(MarkdownPreviewLayout.allCases, id: \.self) { Text($0.label).tag($0) }
+            }
         }
     }
 

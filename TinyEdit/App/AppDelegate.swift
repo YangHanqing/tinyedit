@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     AppState.shared.zoom(by: delta)
                     return true
                 }
+                if event.keyCode == 53 /* Escape */ && flags.isEmpty && Self.leaveFullPreview() { return true }
                 return Self.handleTabKey(event, flags: flags)
             }
             return handled ? nil : event
@@ -44,6 +45,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case String(AppShortcut.zoomOutAlternate.key.character): return -1
         default: return nil
         }
+    }
+
+    /// Escape over a full-width Markdown preview brings the editor back, unless a field (palette, rename) has the key.
+    @MainActor
+    private static func leaveFullPreview() -> Bool {
+        guard let state = Workspaces.shared.state(for: NSApp.keyWindow), state.previewFull,
+              state.diff == nil, !state.paletteVisible else { return false }
+        if let field = NSApp.keyWindow?.firstResponder as? NSTextView, field.isFieldEditor { return false }
+        state.togglePreview()
+        return true
     }
 
     /// ⌃Tab and ⌃⇧Tab (before the text view takes them), and ⌘1 to ⌘9, in the editor window only.
