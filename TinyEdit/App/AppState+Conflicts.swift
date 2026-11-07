@@ -67,27 +67,35 @@ extension AppState {
         guard !savingIDs.contains(id), let url = fileURLs[id], let buffer = session.buffers[id] else { return }
         let acknowledgedHash = buffer.diskContentHash
         let encoding = buffer.encoding
-        let loaded = await Task.detached(priority: .utility) { try? FileLoader.load(from: url, decoding: .prefer(encoding)) }.value
+        // A file that grew past the open limit is not hashed; its size and date stand in for the hash, so it
+        // still raises the banner (Reload then says why it can't) instead of being ignored.
+        let diskHash = await Task.detached(priority: .utility) { () -> String? in
+            do { return try FileLoader.load(from: url, decoding: .prefer(encoding)).rawHash }
+            catch FileOpenError.fileTooLarge(let bytes) {
+                let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                return "oversize:\(bytes):\(date?.timeIntervalSinceReferenceDate ?? 0)"
+            } catch { return nil }
+        }.value
         // A save, reload or relocation during the read makes this result obsolete.
         guard !savingIDs.contains(id), fileURLs[id] == url,
               let current = session.buffers[id], current.diskContentHash == acknowledgedHash else { return }
-        guard let loaded else {
+        guard let diskHash else {
             if !FileManager.default.fileExists(atPath: url.path), current.conflict != .missing {
                 session.buffers[id]?.conflict = .missing
                 flushImmediately()
             }
             return
         }
-        if loaded.rawHash == acknowledgedHash { return } // our own write, or no real change
+        if diskHash == acknowledgedHash { return } // our own write, or no real change
         // Keep the text, selection, undo history and acknowledged disk hash until the user chooses.
         // Bytes other than the ones a Keep My Version was about bring the banner back.
         switch current.externalChange {
-        case let change? where change.hash == loaded.rawHash:
+        case let change? where change.hash == diskHash:
             break
         case let change? where change.hash == nil && change.kept:
-            session.buffers[id]?.externalChange?.hash = loaded.rawHash
+            session.buffers[id]?.externalChange?.hash = diskHash
         default:
-            session.buffers[id]?.externalChange = ExternalChange(hash: loaded.rawHash)
+            session.buffers[id]?.externalChange = ExternalChange(hash: diskHash)
         }
         if current.conflict != .external {
             session.buffers[id]?.conflict = .external
@@ -148,10 +156,16 @@ extension AppState {
     func reloadFromDisk(_ id: UUID) async {
         guard let url = fileURLs[id], let encoding = session.buffers[id]?.encoding, let store = stores[id] else { return }
         let gen = store.generation
-        let loaded = await Task.detached(priority: .userInitiated) { try? FileLoader.load(from: url, decoding: .prefer(encoding)) }.value
-        guard let loaded else {
-            showToast(String(localized: "Could not open file"), error: true)
-            return
+        let result = await Task.detached(priority: .userInitiated) {
+            Result { try FileLoader.load(from: url, decoding: .prefer(encoding)) }
+        }.value
+        let loaded: LoadedFile
+        switch result {
+        case .success(let file): loaded = file
+        case .failure(FileOpenError.fileTooLarge(let bytes)):
+            return showToast(Self.tooLargeMessage(url.lastPathComponent, bytes: bytes), error: true)
+        case .failure:
+            return showToast(String(localized: "Could not open file"), error: true)
         }
         guard textUnchanged(id, store: store, since: gen) else { return }
         await applyDiskVersion(loaded, to: id)

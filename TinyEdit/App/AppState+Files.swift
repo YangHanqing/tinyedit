@@ -63,6 +63,7 @@ extension AppState {
         }
         var opened = 0
         var overLimit = 0
+        var tooLarge: [(url: URL, bytes: Int)] = []
         for url in urls {
             var isDir: ObjCBool = false
             if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
@@ -113,9 +114,12 @@ extension AppState {
                 noteRecentDocument(url)
                 firstNew = firstNew ?? b.id
                 opened += 1
-            } catch let e as FileOpenError {
+            } catch FileOpenError.fileTooLarge(let bytes) {
                 if started { access.stop(url) }
-                showToast(e == .fileTooLarge ? String(localized: "File is too large to open") : String(localized: "Could not open file"), error: true)
+                tooLarge.append((url, bytes))
+            } catch is FileOpenError {
+                if started { access.stop(url) }
+                showToast(String(localized: "Could not open file"), error: true)
             } catch {
                 if started { access.stop(url) }
                 Log.files.error("open failed: \((error as NSError).domain, privacy: .public) \((error as NSError).code)")
@@ -125,6 +129,9 @@ extension AppState {
         if let target = firstNew ?? existing { selectTab(target) }
         if firstNew != nil {
             for id in placeholders where (stores[id]?.length ?? 1) == 0 { removeBuffer(id, rememberClosed: false, refill: false) }
+        }
+        for file in tooLarge {
+            await offerLargeFileHead(file.url, name: file.url.lastPathComponent, bytes: file.bytes)
         }
         await runCommandLineRequests(requests)
         if overLimit > 0 {
@@ -320,13 +327,17 @@ extension AppState {
         }
         guard let store = stores[id] else { return }
         let gen = store.generation
-        let loaded = await Task.detached(priority: .userInitiated) {
-            try? FileLoader.load(from: url, decoding: .force(encoding))
+        let result = await Task.detached(priority: .userInitiated) {
+            Result { try FileLoader.load(from: url, decoding: .force(encoding)) }
         }.value
         guard session.buffers[id] != nil else { return }
-        guard let loaded else {
-            showToast(String(localized: "Could not read the file as \(encoding.statusLabel)"), error: true)
-            return
+        let loaded: LoadedFile
+        switch result {
+        case .success(let file): loaded = file
+        case .failure(FileOpenError.fileTooLarge(let bytes)):
+            return showToast(Self.tooLargeMessage(url.lastPathComponent, bytes: bytes), error: true)
+        case .failure:
+            return showToast(String(localized: "Could not read the file as \(encoding.statusLabel)"), error: true)
         }
         guard textUnchanged(id, store: store, since: gen) else { return }
         await applyDiskVersion(loaded, to: id, markChanges: false)

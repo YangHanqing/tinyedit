@@ -63,4 +63,26 @@ final class EncodingTests: XCTestCase {
     func testUTF32LEBOMRejected() {
         XCTAssertThrowsError(try TextEncoding.decode(Data([0xFF, 0xFE, 0x00, 0x00, 0x41, 0x00, 0x00, 0x00])))
     }
+
+    /// The beginning of a file too large to open decodes as the whole file would: a cut inside a character
+    /// must not turn UTF-8 into GB18030 mojibake or lose the encoding.
+    func testHeadOfALargeFileIsAPrefixInTheFilesEncoding() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("head-\(UUID().uuidString).txt")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let lines = String(repeating: "héllo 你好 😀 中文\n", count: 50)
+        let oneLine = String(repeating: "你好😀é", count: 50)
+        for enc in TextEncoding.allCases {
+            for text in [lines, oneLine] {
+                let data = try enc.encode(text)
+                try data.write(to: url)
+                for cut in (data.count - 9)...(data.count - 1) {
+                    let head = try FileLoader.loadHead(of: url, maxBytes: cut)
+                    XCTAssertEqual(head.encoding, enc, "\(enc) cut at \(cut)")
+                    XCTAssertTrue(text.hasPrefix(head.logicalLF), "\(enc) cut at \(cut)")
+                    XCTAssertGreaterThan(head.logicalLF.count, text.count * 3 / 4, "\(enc) cut at \(cut)")
+                    if text == lines { XCTAssertTrue(head.logicalLF.hasSuffix("\n"), "\(enc) cut at \(cut)") }
+                }
+            }
+        }
+    }
 }

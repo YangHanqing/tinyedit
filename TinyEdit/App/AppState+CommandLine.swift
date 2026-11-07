@@ -31,9 +31,10 @@ extension AppState {
         let loaded: LoadedFile
         do {
             loaded = try await Task.detached(priority: .userInitiated) { try FileLoader.load(from: url) }.value
+        } catch FileOpenError.fileTooLarge(let bytes) {
+            return await offerLargeFileHead(url, name: String(localized: "Piped text"), bytes: bytes)
         } catch {
-            let tooLarge = (error as? FileOpenError) == .fileTooLarge
-            return showToast(tooLarge ? String(localized: "File is too large to open") : String(localized: "Could not open file"), error: true)
+            return showToast(String(localized: "Could not open file"), error: true)
         }
         let text = loaded.logicalLF
         guard !text.isEmpty, openTranslationTab(text), let id = session.selectedBufferID, let store = stores[id] else { return }
