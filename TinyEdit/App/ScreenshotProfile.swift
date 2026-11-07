@@ -16,7 +16,7 @@ enum ScreenshotProfile {
         guard scene != nil else { return }
         UserDefaults.standard.setVolatileDomain([
             "AppleLanguages": ["en"], "tinyedit.language": "en",
-            "tinyedit.appearance": "dark", "tinyedit.fontSize": 16.0,
+            "tinyedit.appearance": scene?.hasSuffix("-light") == true ? "light" : "dark", "tinyedit.fontSize": 16.0,
             "tinyedit.tabWidth": 4, "tinyedit.insertSpaces": true,
             "tinyedit.detectIndentation": true, "tinyedit.wordWrap": true,
             "tinyedit.showLineNumbers": true, "tinyedit.appIcon": "notepad",
@@ -34,7 +34,7 @@ enum ScreenshotProfile {
         guard let scene else { return }
         window.setContentSize(size)
         window.center()
-        window.appearance = NSAppearance(named: .darkAqua)
+        window.appearance = NSAppearance(named: scene.hasSuffix("-light") ? .aqua : .darkAqua)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         Task { @MainActor in
@@ -84,11 +84,67 @@ enum ScreenshotProfile {
             | --- | --- |
             | Command palette | ⇧⌘P |
             | Markdown preview | ⇧⌘V |
-            | Toggle task | ⌘↩ |
+            | Toggle task | Cmd + Return |
 
             > Simple on the surface. Ready for everyday work.
             """
             switch scene {
+            case "hero-simple-light", "hero-simple-dark":
+                tab("Notes.txt", """
+                Monday notes
+
+                A little time to settle in before the week begins.
+
+                Morning meeting
+                Share the latest ideas with the team.
+                Ask Maya about the new project timeline.
+                Make room for questions and fresh perspectives.
+
+                Things to remember
+                Send the follow-up notes after lunch.
+                Book a quiet hour for the next draft.
+                Pick up coffee on the way home.
+
+                Good work takes space to think.
+                One thing at a time is enough.
+                """)
+            case "hero-code-light", "hero-code-dark":
+                tab("Notes.swift", """
+                import Foundation
+
+                struct Note: Identifiable {
+                    let id = UUID()
+                    let title: String
+                    let createdAt: Date
+                    var isComplete = false
+
+                    var summary: String {
+                        let status = isComplete ? "Done" : "In progress"
+                        return "\\(title) · \\(status)"
+                    }
+                }
+
+                struct Notebook {
+                    private(set) var notes: [Note] = []
+
+                    mutating func add(_ title: String) {
+                        let note = Note(title: title, createdAt: .now)
+                        notes.append(note)
+                    }
+
+                    var unfinished: [Note] {
+                        notes.filter { !$0.isComplete }
+                    }
+                }
+
+                var notebook = Notebook()
+                notebook.add("Write the first draft")
+                notebook.add("Share the idea with the team")
+
+                for note in notebook.unfinished {
+                    print(note.summary)
+                }
+                """, .swift)
             case "syntax":
                 tab("Notes.swift", """
                 import Foundation
@@ -172,6 +228,12 @@ enum ScreenshotProfile {
             state.activeBufferChanged()
             if let store = state.activeStore { state.host.activate(store, settings: state.settings) }
             state.host.focus()
+            if scene.hasPrefix("hero-simple"), let store = state.activeStore {
+                let range = store.textStorage.mutableString.range(of: "Send the follow-up notes after lunch.")
+                if range.location != NSNotFound {
+                    state.host.textView.setSelectedRange(NSRange(location: range.location + range.length, length: 0))
+                }
+            }
             if scene == "markdown" || scene == "overview" { state.togglePreview() }
             if scene == "palette" { state.togglePalette() }
             if scene == "json-open", let store = state.activeStore {
@@ -219,8 +281,9 @@ enum ScreenshotProfile {
         let directory = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents/TinyEdit-captures", isDirectory: true)
         guard let view = window.contentView else { return }
         let bounds = view.bounds
+        let scale = scene.hasPrefix("hero-") ? 3 : 2
         guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil,
-            pixelsWide: Int(bounds.width * 2), pixelsHigh: Int(bounds.height * 2),
+            pixelsWide: Int(bounds.width) * scale, pixelsHigh: Int(bounds.height) * scale,
             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
             colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return }
         bitmap.size = bounds.size

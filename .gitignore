@@ -24,3 +24,6 @@ CLAUDE.local.md
 
 # Local release signing settings (paths to certificates and keys)
 /scripts/release.local.env
+
+# Raw exports for the introduction page (scaled copies live in site/img)
+/assets/promo/website/

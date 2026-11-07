@@ -1,11 +1,11 @@
 #!/bin/bash
 # Launch a disposable English/dark documentation session at 1100 × 720 points.
-# Usage: scripts/screenshots.sh [overview|palette|syntax|calculator|markdown|json-paste|json-value|json-open|json-image|curl|translation|base64]
+# Usage: scripts/screenshots.sh [overview|palette|syntax|calculator|markdown|json-paste|json-value|json-open|json-image|curl|translation|base64|hero-simple-light|hero-simple-dark|hero-code-light|hero-code-dark]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SCENE="${1:-overview}"
 case "$SCENE" in
-  overview|palette|syntax|calculator|markdown|json-paste|json-value|json-open|json-image|curl|translation|base64) ;;
+  overview|palette|syntax|calculator|markdown|json-paste|json-value|json-open|json-image|curl|translation|base64|hero-simple-light|hero-simple-dark|hero-code-light|hero-code-dark) ;;
   *) echo "Unknown screenshot scene: $SCENE" >&2; exit 1 ;;
 esac
 xcodegen generate >/dev/null
@@ -34,9 +34,9 @@ for attempt in {1..20}; do
   if [ "$attempt" = 20 ]; then exit 1; fi
   sleep 0.3
 done
-echo "Launched $SCENE at 1100 × 720 points (English, dark)."
+echo "Launched $SCENE at 1100 × 720 points (English)."
 mkdir -p build/screenshot-raw
-for attempt in {1..400}; do
+for attempt in {1..1200}; do
   if [ -f "$CAPTURES/$SCENE.png" ]; then
     cp "$CAPTURES/$SCENE.png" "build/screenshot-raw/$SCENE.png"
     echo "Exported build/screenshot-raw/$SCENE.png"

@@ -1,0 +1,1269 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TinyEdit</title>
+<meta name="description" content="TinyEdit 是一个 macOS 原生的纯文本编辑器，内置 JSON、Markdown、编解码、图片文字识别等工具。免费，开源。">
+<meta property="og:title" content="TinyEdit">
+<meta property="og:description" content="A native macOS plain-text editor with JSON, Markdown, decoding and text recognition built in. Free and open source.">
+<meta property="og:image" content="https://yanghanqing.github.io/tinyedit/img/og.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<script>
+  // Language and theme before first paint.
+  (function () {
+    var d = document.documentElement, lang = null, theme = null;
+    try { lang = localStorage.getItem('lang'); theme = localStorage.getItem('theme'); } catch (e) {}
+    var q = /[?&]lang=(zh|en)/.exec(location.search);
+    if (q) lang = q[1];
+    if (!lang) lang = /^zh/i.test(navigator.language || '') ? 'zh' : 'en';
+    d.lang = lang === 'zh' ? 'zh-CN' : 'en';
+    if (theme === 'light' || theme === 'dark') d.setAttribute('data-theme', theme);
+  })();
+</script>
+<style>
+:root {
+  --bg: #F6F5F1;
+  --bg-raised: #FFFFFF;
+  --fg: #1D1D1F;
+  --muted: #5E5F66;
+  --faint: #8A8B92;
+  --line: #E1DFD8;
+  --accent: #C2570A;
+  --accent-bg: #E8740C;
+  --on-accent: #FFFFFF;
+  --code-bg: #EDEBE5;
+  --seg-on: #FFFFFF;
+  --shadow: 0 0 0 1px rgba(0,0,0,.10), 0 24px 48px -16px rgba(40,30,10,.28);
+
+  /* TinyEdit's own tokens (Theme.swift), light */
+  --te-editor: #FFFFFF; --te-chrome: #F3F3F5; --te-sep: #DEDEE3; --te-tab: #DCE5FC;
+  --te-raised: #FFFFFF; --te-sel: #C9DBFB; --te-text: #1D1D1F; --te-text2: #5E5F66; --te-text3: #84858C;
+  --te-gutter: #8A8B92; --te-accent: #2F6BED; --te-on-accent: #FFFFFF; --te-current: #F2F5FA;
+  --te-key: #326D74; --te-string: #C41A16; --te-number: #1C00CF; --te-literal: #0F68A0; --te-entity: #2349B3;
+  --te-keyword: #9B2393; --te-comment: #6E7781; --te-card: #FFFFFF; --te-card-line: #DEDEE3; --te-field: #F5F5F7;
+  --te-success: #1A7F37;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141416; --bg-raised: #1C1C1F; --fg: #E6E6E9; --muted: #A4A5AD; --faint: #7C7D85;
+    --line: #2C2D31; --accent: #F59A3C; --accent-bg: #E8740C; --on-accent: #FFFFFF; --code-bg: #1F2023; --seg-on: #3A3B41;
+    --shadow: 0 0 0 1px rgba(255,255,255,.08), 0 24px 48px -16px rgba(0,0,0,.7);
+    --te-editor: #1E1F22; --te-chrome: #2A2B2F; --te-sep: #3A3B40; --te-tab: #37425E;
+    --te-raised: #4A4B52; --te-sel: #3B4F78; --te-text: #E4E4E7; --te-text2: #A4A5AD; --te-text3: #7C7D85;
+    --te-gutter: #6C6D75; --te-accent: #7AA2FF; --te-on-accent: #14161B; --te-current: #26282D;
+    --te-key: #6BD1C6; --te-string: #FC6A5D; --te-number: #D9C97C; --te-literal: #67B7E4; --te-entity: #7AA2F7;
+    --te-keyword: #FF7AB2; --te-comment: #8A949E; --te-card: #2A2B2F; --te-card-line: #3A3B40; --te-field: #1E1F22;
+    --te-success: #3FB950;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141416; --bg-raised: #1C1C1F; --fg: #E6E6E9; --muted: #A4A5AD; --faint: #7C7D85;
+  --line: #2C2D31; --accent: #F59A3C; --accent-bg: #E8740C; --on-accent: #FFFFFF; --code-bg: #1F2023; --seg-on: #3A3B41;
+  --shadow: 0 0 0 1px rgba(255,255,255,.08), 0 24px 48px -16px rgba(0,0,0,.7);
+  --te-editor: #1E1F22; --te-chrome: #2A2B2F; --te-sep: #3A3B40; --te-tab: #37425E;
+  --te-raised: #4A4B52; --te-sel: #3B4F78; --te-text: #E4E4E7; --te-text2: #A4A5AD; --te-text3: #7C7D85;
+  --te-gutter: #6C6D75; --te-accent: #7AA2FF; --te-on-accent: #14161B; --te-current: #26282D;
+  --te-key: #6BD1C6; --te-string: #FC6A5D; --te-number: #D9C97C; --te-literal: #67B7E4; --te-entity: #7AA2F7;
+  --te-keyword: #FF7AB2; --te-comment: #8A949E; --te-card: #2A2B2F; --te-card-line: #3A3B40; --te-field: #1E1F22;
+  --te-success: #3FB950;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 17px/1.65 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+html[lang="en"] .zh, html[lang="zh-CN"] .en { display: none !important; }
+a { color: inherit; }
+code, kbd, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+code { font-size: .88em; background: var(--code-bg); padding: .1em .35em; border-radius: 4px; }
+kbd { font-size: .85em; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 .4em; background: var(--bg-raised); white-space: nowrap; }
+img { max-width: 100%; height: auto; display: block; }
+button { font: inherit; color: inherit; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+@media (max-width: 600px) { .wrap { padding: 0 16px; } }
+
+/* Header */
+header.top { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid transparent; transition: border-color .2s; }
+header.top.scrolled { border-bottom-color: var(--line); }
+.top .wrap { display: flex; align-items: center; gap: 28px; height: 56px; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 650; text-decoration: none; font-size: 16px; }
+.brand img { width: 26px; height: 26px; }
+.top nav { display: flex; gap: 22px; font-size: 14px; color: var(--muted); }
+.top nav a { text-decoration: none; }
+.top nav a:hover { color: var(--fg); }
+.top .tools { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.iconbtn { border: 0; background: none; height: 32px; min-width: 32px; padding: 0 8px; border-radius: 7px; cursor: pointer; color: var(--muted); font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; }
+.iconbtn:hover { background: var(--code-bg); color: var(--fg); }
+.iconbtn svg { width: 17px; height: 17px; }
+@media (max-width: 720px) { .top nav { display: none; } }
+
+/* Hero */
+.hero { padding: 72px 0 0; }
+.hero h1 { font-size: clamp(38px, 6.4vw, 72px); line-height: 1.08; letter-spacing: -.025em; margin: 0 0 22px; font-weight: 700; max-width: 14em; }
+html[lang="zh-CN"] .hero h1 { letter-spacing: -.01em; }
+.hero .lede { font-size: clamp(17px, 2vw, 20px); color: var(--muted); max-width: 34em; margin: 0 0 30px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 20px; border-radius: 10px; font-size: 16px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); background: var(--bg-raised); }
+.btn.primary { background: var(--accent-bg); color: var(--on-accent); border-color: transparent; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn:not(.primary):hover { border-color: var(--faint); }
+.btn svg { width: 18px; height: 18px; }
+.meta { margin-top: 18px; font-size: 14px; color: var(--faint); }
+.meta span + span::before { content: "·"; margin: 0 .6em; }
+.hero-shot { margin: 56px auto 0; max-width: 1100px; }
+
+/* A macOS window frame around a screenshot */
+.win { position: relative; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); background: var(--te-editor); }
+.win > img { width: 100%; height: auto; }
+.win .lights { position: absolute; left: 0; top: 0; width: 100%; aspect-ratio: 2200 / 64; display: flex; align-items: center; gap: .72%; padding-left: 1.7%; pointer-events: none; }
+.win .lights i { width: 1.1%; aspect-ratio: 1; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.15); }
+.win .lights i:nth-child(2) { background: #FEBC2E; }
+.win .lights i:nth-child(3) { background: #28C840; }
+.win.cropped { border-radius: 12px 12px 0 0; -webkit-mask-image: linear-gradient(#000 85%, transparent); mask-image: linear-gradient(#000 85%, transparent); box-shadow: none; outline: 1px solid var(--line); }
+.only-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .only-dark { display: block; }
+  :root:not([data-theme="light"]) .only-light { display: none; }
+}
+:root[data-theme="dark"] .only-dark { display: block; }
+:root[data-theme="dark"] .only-light { display: none; }
+
+/* Sections */
+section { padding: 120px 0 0; }
+.sec-head { max-width: 40em; margin-bottom: 40px; }
+.sec-head h2 { font-size: clamp(28px, 3.6vw, 40px); line-height: 1.2; letter-spacing: -.015em; margin: 0 0 14px; font-weight: 700; }
+.sec-head p { color: var(--muted); margin: 0; font-size: 18px; }
+.note { font-size: 13px; color: var(--faint); }
+
+/* Mock TinyEdit window (built in HTML) */
+.te { --row: 22px; position: relative; border-radius: 12px; overflow: hidden; background: var(--te-editor); color: var(--te-text); box-shadow: var(--shadow); font-size: 13px; line-height: 1.4; display: flex; flex-direction: column; text-align: left; }
+.te-title { height: 38px; flex: none; background: var(--te-chrome); display: flex; align-items: center; justify-content: center; position: relative; font-weight: 600; font-size: 13px; gap: 6px; }
+.te-title img { width: 16px; height: 16px; }
+.te-title .lights { position: absolute; left: 14px; top: 0; bottom: 0; display: flex; gap: 8px; align-items: center; }
+.te-title .lights i { width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; }
+.te-title .lights i:nth-child(2) { background: #FEBC2E; }
+.te-title .lights i:nth-child(3) { background: #28C840; }
+.te-tabs { height: 36px; flex: none; background: var(--te-chrome); border-bottom: 1px solid var(--te-sep); display: flex; align-items: center; gap: 2px; padding: 0 6px; overflow-x: auto; scrollbar-width: none; }
+.te-tabs::-webkit-scrollbar { display: none; }
+.te-tab { flex: 0 0 auto; min-width: 110px; height: 28px; border: 0; background: none; border-radius: 7px; padding: 0 12px; text-align: left; color: var(--te-text2); font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.te-tab:hover { background: color-mix(in srgb, var(--te-tab) 45%, transparent); }
+.te-tab[aria-selected="true"] { background: var(--te-tab); color: var(--te-text); }
+.te-tab .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--te-text3); visibility: hidden; }
+.te-tab.dirty .dot { visibility: visible; }
+.te-body { flex: 1; position: relative; min-height: 0; overflow: hidden; }
+.te-status { height: 28px; flex: none; background: var(--te-chrome); border-top: 1px solid var(--te-sep); display: flex; align-items: center; gap: 16px; padding: 0 12px; font-size: 12px; color: var(--te-text2); white-space: nowrap; overflow: hidden; }
+.te-status .r { margin-left: auto; display: flex; gap: 16px; }
+.te-status button { border: 0; background: none; color: var(--te-text2); font-size: 12px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+.te-status button:hover { background: var(--te-tab); color: var(--te-text); }
+.te-status .path { color: var(--te-text); }
+@media (max-width: 700px) { .te-status .r { display: none; } }
+
+.code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 14px; line-height: var(--row); }
+.lines { padding: 8px 0; }
+.ln { display: flex; min-height: var(--row); }
+.ln .g { flex: none; width: 44px; padding-right: 14px; text-align: right; color: var(--te-gutter); user-select: none; }
+.ln .t { flex: 1; white-space: pre; min-width: 0; }
+.ln.cur { background: var(--te-current); }
+.ln input { all: unset; font: inherit; color: inherit; width: 100%; caret-color: var(--te-accent); }
+.ghost { color: var(--te-text3); white-space: pre; }
+.k-key { color: var(--te-key); } .k-str { color: var(--te-string); } .k-num { color: var(--te-number); } .k-lit { color: var(--te-literal); }
+.k-head { color: var(--te-entity); } .k-box { color: var(--te-keyword); } .k-done { color: var(--te-text3); }
+.ta-wrap { display: flex; height: 100%; overflow: auto; }
+.ta-gutter { flex: none; width: 44px; padding: 8px 14px 8px 0; text-align: right; color: var(--te-gutter); user-select: none; white-space: pre; }
+.code, .ta-wrap textarea { tab-size: 12; }
+.ta-wrap textarea { flex: 1; border: 0; outline: 0; resize: none; background: none; color: var(--te-text); padding: 8px 12px 8px 0; margin: 0; caret-color: var(--te-accent); white-space: pre; overflow: hidden; min-height: 100%; }
+.ta-wrap textarea::selection { background: var(--te-sel); }
+
+/* Cards inside the mock (SuggestionCard look) */
+.card { position: absolute; top: 12px; right: 12px; width: min(360px, calc(100% - 24px)); background: var(--te-card); border: 1px solid var(--te-card-line); border-radius: 12px; padding: 12px; box-shadow: 0 10px 30px -10px rgba(0,0,0,.35); z-index: 3; }
+.card[hidden] { display: none; }
+.card .hd { display: flex; align-items: center; gap: 6px; color: var(--te-text2); margin-bottom: 10px; }
+.card .hd b { color: var(--te-text); }
+.card .hd .x { margin-left: auto; border: 0; background: none; color: var(--te-text3); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px; }
+.card pre { margin: 0 0 10px; padding: 8px 10px; background: var(--te-field); border: 1px solid var(--te-card-line); border-radius: 7px; max-height: 150px; overflow: auto; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+.card .btns { display: flex; justify-content: flex-end; gap: 8px; }
+.tbtn { border: 0; border-radius: 6px; padding: 4px 11px; font-size: 13px; font-weight: 500; cursor: pointer; background: var(--te-raised); color: var(--te-text); }
+:root:not([data-theme="dark"]) .tbtn:not(.blue) { box-shadow: 0 0 0 .5px rgba(0,0,0,.15), 0 1px 1px rgba(0,0,0,.06); }
+.tbtn.blue { background: var(--te-accent); color: var(--te-on-accent); }
+
+.toast { position: absolute; left: 50%; bottom: 40px; transform: translate(-50%, 8px); background: var(--te-card); border: 1px solid var(--te-card-line); color: var(--te-text); padding: 7px 14px; border-radius: 9px; font-size: 13px; opacity: 0; transition: opacity .18s, transform .18s; pointer-events: none; white-space: nowrap; z-index: 6; box-shadow: 0 8px 24px -8px rgba(0,0,0,.35); display: flex; gap: 12px; align-items: center; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.toast button { border: 0; background: none; color: var(--te-accent); cursor: pointer; padding: 0; font-size: 13px; }
+
+/* Hero switcher */
+.hero-stage { position: relative; aspect-ratio: 2400 / 1571; touch-action: pan-y; outline: none; }
+.hero-stage:focus-visible { box-shadow: var(--shadow), 0 0 0 3px var(--accent-bg); }
+.hero-stage .slide { position: absolute; inset: 0; opacity: 0; transition: opacity .35s ease; }
+.hero-stage .slide.on { opacity: 1; }
+.hero-stage .slide img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.hero-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px 24px; margin-top: 18px; flex-wrap: wrap-reverse; }
+.hero-nav .seg { margin: 0; }
+.hero-nav .cap { margin: 0; color: var(--muted); font-size: 15px; }
+@media (max-width: 700px) { .hero-nav { flex-direction: column-reverse; align-items: stretch; } .hero-nav .seg { display: flex; } .hero-nav .seg button { flex: 1; padding: 6px 6px; font-size: 13px; } }
+.keep { height: 300px; }
+.keep .te-tab { min-width: 0; max-width: 170px; }
+.keep .te-tab span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Auto-advancing switchers: a progress line under the current control */
+.seg button, .te-tab { position: relative; }
+.auto .run::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 2px; height: 2px; border-radius: 1px; background: var(--accent-bg); transform-origin: left; animation: autoprog var(--dur, 6s) linear forwards; }
+.te.auto .run::after { background: var(--te-accent); bottom: 1px; }
+.auto.paused .run::after { animation-play-state: paused; }
+@keyframes autoprog { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* JSON screenshot switcher */
+.seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--code-bg); margin-bottom: 14px; flex-wrap: wrap; }
+.seg button { border: 0; background: none; padding: 5px 12px; border-radius: 7px; font-size: 14px; color: var(--muted); cursor: pointer; }
+.seg button[aria-selected="true"] { background: var(--seg-on); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.gallery .win { cursor: zoom-in; }
+.gallery .win img[hidden] { display: none; }
+.points { margin: 14px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 15.5px; }
+.points li { padding: 9px 0 9px 18px; border-top: 1px solid var(--line); position: relative; }
+.points li::before { content: ""; position: absolute; left: 2px; top: 1.15em; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-bg); }
+
+/* Tools showcase (display only) */
+.play .te-body, .play .te-status { pointer-events: none; user-select: none; }
+.play .te { height: 440px; }
+.panel { position: absolute; inset: 0; overflow: auto; }
+.panel[hidden] { display: none; }
+.explain { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: start; margin-top: 22px; min-height: 92px; }
+.explain h3 { margin: 0 0 4px; font-size: 18px; }
+.explain p { margin: 0; color: var(--muted); max-width: 44em; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.chip { border: 1px solid var(--line); background: var(--bg-raised); border-radius: 999px; padding: 3px 12px; font-size: 13px; cursor: pointer; color: var(--muted); }
+.chip:hover { color: var(--fg); border-color: var(--faint); }
+@media (max-width: 700px) { .explain { grid-template-columns: 1fr; } }
+
+.mark { margin-left: 10px; color: var(--te-text3); font-size: 12.5px; }
+.mark.link { color: var(--te-accent); text-decoration: none; display: inline-flex; vertical-align: -2px; }
+.mark.link svg { width: 15px; height: 15px; }
+.swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-left: 10px; vertical-align: -1px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
+.json .ln { cursor: text; }
+
+.md { display: grid; grid-template-columns: 1fr 1fr; height: 100%; }
+.md > div { overflow: auto; }
+.md .pv { border-left: 1px solid var(--te-sep); padding: 18px 22px; font-size: 14px; line-height: 1.5; }
+.pv h1 { font-size: 22px; margin: 0 0 6px; }
+.pv h2 { font-size: 17px; margin: 18px 0 8px; }
+.pv p { margin: 0; color: var(--te-text); }
+.pv label { display: flex; gap: 8px; align-items: center; padding: 2px 0; cursor: pointer; }
+.pv label.done { color: var(--te-text3); }
+.pv input { accent-color: var(--te-accent); margin: 0; }
+.md .k-box { cursor: pointer; }
+@media (max-width: 700px) { .md { grid-template-columns: 1fr; } .md .pv { display: none; } }
+
+.palette { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); width: min(520px, calc(100% - 24px)); background: var(--te-card); border: 1px solid var(--te-card-line); border-radius: 12px; box-shadow: 0 18px 40px -12px rgba(0,0,0,.45); overflow: hidden; z-index: 4; }
+.palette[hidden] { display: none; }
+.palette input { width: 100%; border: 0; border-bottom: 1px solid var(--te-card-line); background: none; outline: 0; padding: 12px 14px; font-size: 15px; color: var(--te-text); }
+.palette ul { list-style: none; margin: 0; padding: 4px 0 6px; max-height: 280px; overflow: auto; }
+.palette li.h { padding: 8px 14px 3px; font-size: 11.5px; color: var(--te-text3); font-weight: 600; }
+.palette li.c { padding: 6px 14px; margin: 0 6px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
+.palette li.c.sel { background: var(--te-tab); }
+.palette li.c.off { color: var(--te-text3); cursor: default; }
+.palette li.c small { color: var(--te-text3); }
+
+/* Feature rows */
+.feat { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.9fr); gap: 48px; align-items: start; padding: 56px 0; border-top: 1px solid var(--line); }
+.feat:first-of-type { border-top: 0; padding-top: 0; }
+.feat h3 { font-size: 22px; margin: 0 0 10px; letter-spacing: -.01em; }
+.feat p { color: var(--muted); margin: 0 0 10px; }
+.feat .note { margin-top: 14px; }
+@media (max-width: 860px) { .feat { grid-template-columns: 1fr; gap: 24px; } }
+.ocr { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: center; }
+.ocr img { border-radius: 10px; box-shadow: var(--shadow); }
+.ocr pre { margin: 0; }
+@media (max-width: 600px) { .ocr { grid-template-columns: 1fr; } }
+.langs { font-size: 14px; color: var(--faint); line-height: 1.9; margin-top: 14px; }
+
+/* Mac */
+.term { background: #1A1A1C; color: #E4E4E7; border-radius: 12px; padding: 14px 18px 18px; font-size: 13.5px; line-height: 1.75; overflow-x: auto; box-shadow: var(--shadow); }
+.term .bar { display: flex; gap: 7px; margin-bottom: 12px; }
+.term .bar i { width: 11px; height: 11px; border-radius: 50%; background: #48484C; }
+.term .p { color: #6BD1C6; }
+.term .c { color: #7C7D85; }
+.term pre { margin: 0; font: inherit; }
+.facts { margin: 0; }
+.facts.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px 40px; }
+.facts.grid dt { margin-top: 0; }
+@media (max-width: 860px) { .facts.grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .facts.grid { grid-template-columns: 1fr; } }
+.facts dt { font-weight: 650; margin-top: 22px; }
+.facts dt:first-child { margin-top: 0; }
+.facts dd { margin: 4px 0 0; color: var(--muted); }
+
+/* Download */
+.dl { margin-top: 120px; padding: 64px 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: auto 1fr; gap: 40px; align-items: center; }
+.dl > img { width: 128px; height: 128px; }
+.dl h2 { font-size: clamp(28px, 3.6vw, 40px); margin: 0 0 8px; letter-spacing: -.015em; }
+.dl p { margin: 0 0 22px; color: var(--muted); }
+.dl .install { margin: 22px 0 0; color: var(--muted); font-size: 15px; }
+@media (max-width: 700px) { .dl { grid-template-columns: 1fr; gap: 20px; } .dl > img { width: 88px; height: 88px; } }
+footer { padding: 28px 0 48px; border-top: 1px solid var(--line); font-size: 14px; color: var(--faint); }
+footer .links { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+footer .privacy-line { margin: 0 0 14px; max-width: 52em; }
+footer a { text-decoration: none; }
+footer a:hover { color: var(--fg); }
+
+.win.cropped, .feat .win { cursor: zoom-in; }
+dialog.zoom { border: 0; padding: 0; background: none; max-width: min(1400px, 96vw); max-height: 94vh; overflow: visible; }
+dialog.zoom::backdrop { background: rgba(10,10,12,.78); }
+dialog.zoom img { max-height: 92vh; width: auto; border-radius: 10px; cursor: zoom-out; }
+.feat > *, .dl > *, .explain > *, .ocr > * { min-width: 0; }
+@media (max-width: 600px) {
+  .hero { padding-top: 48px; }
+  .hero h1 { font-size: 31px; line-height: 1.2; }
+  section { padding-top: 88px; }
+  .sec-head h2 { font-size: 26px; }
+  .feat { padding: 44px 0; }
+  .win.cropped, .feat .win { cursor: pointer; }
+  dialog.zoom { max-width: 100vw; max-height: 100vh; width: 100vw; height: 100vh; overflow: auto; background: rgba(10,10,12,.92); }
+  dialog.zoom img { width: 1000px; max-width: none; max-height: none; border-radius: 0; }
+  .zoom-hint { display: block; }
+}
+.zoom-hint { display: none; font-size: 13px; color: var(--faint); margin-top: 10px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+
+<header class="top" id="top">
+  <div class="wrap">
+    <a class="brand" href="#"><img src="img/icon.png" alt="">TinyEdit</a>
+    <nav>
+      <a href="#try"><span class="zh">工具</span><span class="en">Tools</span></a>
+      <a href="#features"><span class="zh">功能</span><span class="en">Features</span></a>
+      <a href="#download"><span class="zh">下载</span><span class="en">Download</span></a>
+    </nav>
+    <div class="tools">
+      <button class="iconbtn" id="langBtn" type="button" aria-label="Language"><span class="zh">English</span><span class="en">中文</span></button>
+      <button class="iconbtn" id="themeBtn" type="button" aria-label="Appearance">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7"/><path d="M10 3a7 7 0 0 0 0 14z" fill="currentColor"/></svg>
+      </button>
+      <a class="iconbtn" href="https://github.com/YangHanqing/tinyedit" aria-label="GitHub">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      </a>
+    </div>
+  </div>
+</header>
+
+<main>
+<div class="hero">
+  <div class="wrap">
+    <h1><span class="zh">为 macOS 原生打造的<br>轻量文本编辑器</span><span class="en">A lightweight text editor,<br>made natively for macOS</span></h1>
+    <p class="lede">
+      <span class="zh">适合日常的笔记、JSON 与 Markdown。粘贴进来的 Base64、截图和 curl 命令，也能在编辑器里直接处理。</span>
+      <span class="en">For everyday notes, JSON and Markdown. Base64, screenshots and curl commands you paste in are handled right in the editor.</span>
+    </p>
+    <div class="actions">
+      <a class="btn primary" href="https://github.com/YangHanqing/tinyedit/releases/latest">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12"/></svg>
+        <span class="zh">下载 TinyEdit</span><span class="en">Download TinyEdit</span>
+      </a>
+      <a class="btn" href="https://github.com/YangHanqing/tinyedit"><span class="zh">在 GitHub 查看源码</span><span class="en">Source on GitHub</span></a>
+    </div>
+    <div class="meta">
+      <span><span class="zh">macOS 14 及以上</span><span class="en">macOS 14 or later</span></span><span><span class="zh">支持 Apple 芯片与 Intel</span><span class="en">Apple silicon and Intel</span></span><span><span class="zh">安装包约 12 MB</span><span class="en">About a 12 MB download</span></span><span><span class="zh">免费开源（GPL v3）</span><span class="en">Free and open source (GPL v3)</span></span>
+    </div>
+  </div>
+  <div class="wrap">
+    <figure class="hero-shot" id="hero">
+      <div class="hero-stage win" id="heroStage" tabindex="0" aria-roledescription="carousel" aria-label="TinyEdit">
+        <div class="slide on" data-k="plain">
+          <img class="only-light" src="img/hero-simple-light.png" width="2400" height="1571" alt="TinyEdit with a single plain-text tab, Notes.txt">
+          <img class="only-dark" src="img/hero-simple-dark.png" width="2400" height="1571" alt="TinyEdit with a single plain-text tab">
+        </div>
+        <div class="slide" data-k="md">
+          <img class="only-light" src="img/hero-light.png" width="2400" height="1571" alt="Folder sidebar, Markdown source and its preview" loading="lazy">
+          <img class="only-dark" src="img/hero-dark.png" width="2400" height="1571" alt="Folder sidebar, Markdown source and its preview" loading="lazy">
+        </div>
+        <div class="slide" data-k="code">
+          <img class="only-light" src="img/hero-code-light.png" width="2400" height="1571" alt="Swift source with syntax highlighting" loading="lazy">
+          <img class="only-dark" src="img/hero-code-dark.png" width="2400" height="1571" alt="Swift source with syntax highlighting" loading="lazy">
+        </div>
+        <div class="lights"><i></i><i></i><i></i></div>
+      </div>
+      <figcaption class="hero-nav">
+        <div class="seg" role="tablist" id="heroTabs" aria-label="Screens">
+          <button type="button" role="tab" aria-selected="true" data-i="0"><span class="zh">纯文本</span><span class="en">Plain text</span></button>
+          <button type="button" role="tab" aria-selected="false" data-i="1"><span class="zh">Markdown</span><span class="en">Markdown</span></button>
+          <button type="button" role="tab" aria-selected="false" data-i="2"><span class="zh">代码</span><span class="en">Code</span></button>
+        </div>
+        <p class="cap" data-i="0"><span class="zh">默认是一个干净的编辑窗口，没有多余的面板，打开即可输入。</span><span class="en">By default, a clean window with nothing in the way: open it and type.</span></p>
+        <p class="cap" data-i="1" hidden><span class="zh">需要时再打开侧边栏浏览文件夹，或并排预览 Markdown。</span><span class="en">Open the sidebar for a folder, or preview Markdown side by side, when you need them.</span></p>
+        <p class="cap" data-i="2" hidden><span class="zh">36 种语言的语法高亮，按文件名、扩展名或首行的 <code>#!</code> 自动识别。</span><span class="en">Highlighting for 36 languages, detected from the file name, extension or a <code>#!</code> line.</span></p>
+      </figcaption>
+    </figure>
+  </div>
+</div>
+
+<section id="try" class="play">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2><span class="zh">常用工具</span><span class="en">Everyday tools</span></h2>
+      <p><span class="zh">以下画面依照 TinyEdit 的界面绘制，自动轮换，也可点击标签页切换。</span><span class="en">These views are drawn after TinyEdit's interface. They rotate on their own, or pick one from the tabs.</span></p>
+    </div>
+    <div class="te" id="play">
+      <div class="te-title"><div class="lights"><i></i><i></i><i></i></div><img src="img/icon.png" alt="">TinyEdit</div>
+      <div class="te-tabs" role="tablist">
+        <button class="te-tab" role="tab" data-p="calc" aria-selected="true">Scratch.txt<span class="dot"></span></button>
+        <button class="te-tab" role="tab" data-p="json">Response.json<span class="dot"></span></button>
+        <button class="te-tab" role="tab" data-p="md">Checklist.md<span class="dot"></span></button>
+        <button class="te-tab" role="tab" data-p="cmd">Lines.txt<span class="dot"></span></button>
+      </div>
+      <div class="te-body">
+        <div class="panel" data-panel="calc"><div class="lines code" id="calcLines"></div></div>
+        <div class="panel json" data-panel="json" hidden><div class="lines code" id="jsonLines"></div></div>
+        <div class="panel" data-panel="md" hidden>
+          <div class="md"><div class="lines code" id="mdSrc"></div><div class="pv" id="mdPv"></div></div>
+        </div>
+        <div class="panel" data-panel="cmd" hidden>
+          <div class="ta-wrap code"><div class="ta-gutter" id="cmdGutter">1</div><textarea id="cmdText" spellcheck="false" aria-label="Lines.txt"></textarea></div>
+          <div class="palette" id="palette" hidden>
+            <input id="palInput" autocomplete="off" spellcheck="false">
+            <ul id="palList" role="listbox"></ul>
+          </div>
+        </div>
+        <div class="toast" id="toast"><span id="toastText"></span><button type="button" id="toastUndo" hidden></button></div>
+      </div>
+      <div class="te-status" id="playStatus"></div>
+    </div>
+
+    <div class="explain" id="explain"></div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2><span class="zh">功能</span><span class="en">Features</span></h2>
+      <p class="zoom-hint"><span class="zh">轻点截图可放大查看，左右拖动浏览。</span><span class="en">Tap a screenshot to see it larger and drag to look around.</span></p>
+      <p><span class="zh">以下截图均来自应用本身，界面为英文、深色外观；界面语言与外观可在设置中更改。</span><span class="en">Screenshots from the app itself, in English with the dark appearance. Both can be changed in Settings.</span></p>
+    </div>
+
+    <div class="feat">
+      <div>
+        <h3><span class="zh">JSON 工具</span><span class="en">JSON tools</span></h3>
+        <p><span class="zh">除格式化、压缩与转义外，TinyEdit 更多地帮助阅读 JSON。格式化保留键的顺序与数字的原始写法。</span><span class="en">Beyond formatting, minifying and escaping, TinyEdit helps you read JSON. Formatting keeps key order and numbers as written.</span></p>
+        <ul class="points">
+          <li><span class="zh">光标所在的键或值，可拷贝其路径、键与值；字符串拷贝时还原转义。</span><span class="en">Copy the path, key or value under the caret; strings are copied unescaped.</span></li>
+          <li><span class="zh">对象、数组或长字符串可在新标签页中单独打开，字符串内嵌的 JSON 会自动格式化。</span><span class="en">Open an object, array or long string in its own tab; JSON inside a string is formatted.</span></li>
+          <li><span class="zh">行尾标注时间戳对应的日期、颜色、JWT 的过期时间，以及对象的键数与数组的项数。</span><span class="en">Line ends show the date of a timestamp, colors, a JWT's expiry, and key and item counts.</span></li>
+          <li><span class="zh">图片链接与内嵌图片可直接预览、拷贝或保存；URL 的查询参数可展开为 JSON。</span><span class="en">Preview, copy or save linked and embedded pictures; expand a URL's query into JSON.</span></li>
+        </ul>
+      </div>
+      <div class="gallery" id="jsonGallery">
+        <div class="seg" role="tablist">
+          <button type="button" role="tab" aria-selected="true" data-i="0"><span class="zh">取值与图片预览</span><span class="en">Values and previews</span></button>
+          <button type="button" role="tab" aria-selected="false" data-i="1"><span class="zh">单独打开值</span><span class="en">Open Value</span></button>
+        </div>
+        <div class="win">
+          <img src="img/json-values.png" width="2200" height="1440" alt="JSON value marks and an image preview card" loading="lazy">
+          <img src="img/json-open-value.png" width="2200" height="1440" alt="The status bar's Copy Key, Copy Value and Open Value" loading="lazy" hidden>
+          <div class="lights"><i></i><i></i><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div>
+        <h3><span class="zh">粘贴内容识别</span><span class="en">Recognizing pasted text</span></h3>
+        <p><span class="zh">粘贴 Base64、JWT、URL 编码、Unicode 转义或 JSON 字符串后，右上角会询问是否转换，并预览解码结果；可拷贝，也可替换粘贴的原文。Unix 时间戳会显示对应的本地时间。</span><span class="en">Paste Base64, a JWT, URL encoding, Unicode escapes or a JSON string, and a card in the corner offers to convert it with a preview of the result, to copy or to replace what you pasted. Unix timestamps show their local time.</span></p>
+        <p><span class="zh">含终端颜色代码或不可见字符的文本，会提示一键清理。</span><span class="en">Text carrying terminal color codes or invisible characters gets a one-click cleanup.</span></p>
+      </div>
+      <div class="win cropped"><img src="img/paste-base64.png" width="2200" height="420" alt="Looks like Base64 card with the decoded text, Copy and Replace" loading="lazy"><div class="lights"><i></i><i></i><i></i></div></div>
+    </div>
+
+    <div class="feat">
+      <div>
+        <h3><span class="zh">未保存的内容自动保留</span><span class="en">Unsaved text is kept</span></h3>
+        <p><span class="zh">新建标签页后可直接输入，无需先为文件命名。标签页、未保存的文本、光标与滚动位置在退出后都会保留，下次启动时原样恢复。</span><span class="en">Start typing in a new tab without naming a file first. Tabs, unsaved text, the caret and the scroll position are kept through a quit and restored at the next launch.</span></p>
+        <p><span class="zh">这部分内容与原文件分开存放，原文件只在执行保存时才会改动。未命名的标签页以首行文字作为标题。</span><span class="en">This copy is stored apart from your files, which change only when you save. Untitled tabs take their title from the first line.</span></p>
+      </div>
+      <div class="te keep" id="keep">
+        <div class="te-title"><div class="lights"><i></i><i></i><i></i></div><img src="img/icon.png" alt="">TinyEdit</div>
+        <div class="te-tabs" id="keepTabs" role="tablist"></div>
+        <div class="te-body"><div class="lines code" id="keepLines"></div></div>
+        <div class="te-status"><span id="keepStat"></span><div class="r"><span>UTF-8</span><span>LF</span><span>Plain Text</span></div></div>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div>
+        <h3><span class="zh">命令行</span><span class="en">Command line</span></h3>
+        <p><span class="zh">应用自带 <code>tinyedit</code> 命令，可打开文件或文件夹、跳转到指定行，也可接收管道输入。</span><span class="en">TinyEdit comes with a <code>tinyedit</code> command that opens files and folders, jumps to a line, and reads piped input.</span></p>
+        <p><span class="zh">管道输入以新标签页打开，同样会识别 JSON 并提示格式化。已打开的文件会定位到原有标签页，不会重复打开。</span><span class="en">Piped text opens as a new tab and gets the same JSON detection as a paste. A file that is already open is selected rather than opened twice.</span></p>
+        <p class="note"><span class="zh">安装命令可在 设置 ▸ 通用 ▸ 命令行工具 中拷贝。</span><span class="en">Copy the install command from Settings ▸ General ▸ Command Line Tool.</span></p>
+      </div>
+      <div class="term mono" aria-label="Terminal">
+        <div class="bar"><i></i><i></i><i></i></div>
+<pre><span class="c"># <span class="zh">打开文件，不存在时新建</span><span class="en">open a file, creating it if needed</span></span>
+<span class="p">~/project $</span> tinyedit notes.md
+
+<span class="c"># <span class="zh">在新窗口中打开当前文件夹</span><span class="en">open this folder in a new window</span></span>
+<span class="p">~/project $</span> tinyedit .
+
+<span class="c"># <span class="zh">跳到第 120 行第 5 列</span><span class="en">jump to line 120, column 5</span></span>
+<span class="p">~/project $</span> tinyedit main.swift:120:5
+
+<span class="c"># <span class="zh">在新标签页中查看命令输出</span><span class="en">read a command's output in a new tab</span></span>
+<span class="p">~/project $</span> curl -s localhost:8080/items | tinyedit</pre>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div>
+        <h3><span class="zh">文本比较</span><span class="en">Compare</span></h3>
+        <p><span class="zh">比较两个标签页，或比较标签页与磁盘上的文件，逐行显示差异并标出改动的字词。编码与换行符的差异会单独提示。</span><span class="en">Compare two tabs, or a tab with a file on disk. Differences are shown line by line with the changed words marked; encoding and line-ending differences are noted separately.</span></p>
+        <p class="note"><span class="zh">入口位于标签页右键菜单与命令面板。</span><span class="en">From the tab context menu or the command palette.</span></p>
+      </div>
+      <div class="win cropped"><img src="img/compare.png" width="2200" height="760" alt="Unified diff of Before.md and After.md" loading="lazy"><div class="lights"><i></i><i></i><i></i></div></div>
+    </div>
+
+    <div class="feat">
+      <div>
+        <h3><span class="zh">curl 请求</span><span class="en">curl requests</span></h3>
+        <p><span class="zh">粘贴从浏览器“复制为 cURL”得到的命令，确认请求后点击 Send。状态码、耗时、响应头与正文显示在同一张卡片中，JSON 自动格式化。</span><span class="en">Paste a command from the browser's Copy as cURL, review the request and click Send. Status, timing, headers and body appear in one card, with JSON formatted.</span></p>
+        <p class="note"><span class="zh">请求由应用直接发出，不经过 shell，也不会自动发送。</span><span class="en">Sent by the app itself, never through a shell, and never without your click.</span></p>
+      </div>
+      <div class="win cropped"><img src="img/curl.png" width="2200" height="780" alt="curl command with a 200 OK response card" loading="lazy"><div class="lights"><i></i><i></i><i></i></div></div>
+    </div>
+
+    <div class="feat">
+      <div>
+        <h3><span class="zh">翻译</span><span class="en">Translation</span></h3>
+        <p><span class="zh">原文与译文并排显示，可翻译选区或整篇文档。支持 Apple 系统翻译（在本机运行，需 macOS 15），以及兼容 OpenAI 接口的云端服务或本地模型。</span><span class="en">The original and the translation side by side, for a selection or the whole document. Use Apple Translation (on device, macOS 15) or an OpenAI-compatible service or local model.</span></p>
+      </div>
+      <div class="win cropped"><img src="img/translation.png" width="2200" height="1240" alt="Translation sheet with the original and translated text" loading="lazy"><div class="lights"><i></i><i></i><i></i></div></div>
+    </div>
+
+    <div class="feat">
+      <div>
+        <h3><span class="zh">图片文字识别</span><span class="en">Text from pictures</span></h3>
+        <p><span class="zh">粘贴截图或拖入图片，识别出的文字会插入光标处，识别过程在本机完成。</span><span class="en">Paste a screenshot or drop a picture, and the recognized text is inserted at the caret. Recognition runs on your Mac.</span></p>
+        <p><span class="zh">在 macOS 26 上，启用表格识别后，表格以制表符分隔，可直接粘贴到表格软件中。</span><span class="en">On macOS 26, enable table recognition to output tables as tab-separated text, ready for a spreadsheet.</span></p>
+      </div>
+      <div class="ocr">
+        <img src="img/ocr-input.png" width="1600" height="900" alt="A screenshot of a small table: Project estimate" loading="lazy">
+        <div class="win">
+          <img src="img/ocr-result.png" width="1400" height="580" alt="Text recognized from the table and inserted in TinyEdit" loading="lazy">
+          <div class="lights" style="aspect-ratio:1400/64;padding-left:2.7%;gap:1.15%"><i style="width:1.75%"></i><i style="width:1.75%"></i><i style="width:1.75%"></i></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section id="mac">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2><span class="zh">与系统的配合</span><span class="en">Working with macOS</span></h2>
+    </div>
+    <dl class="facts grid">
+      <div><dt><span class="zh">在 Finder 中按空格预览</span><span class="en">Quick Look in Finder</span></dt>
+      <dd><span class="zh">Markdown 显示渲染效果，JSON 与代码带语法高亮。</span><span class="en">Markdown is shown rendered; JSON and code are highlighted.</span></dd></div>
+      <div><dt><span class="zh">编码</span><span class="en">Encodings</span></dt>
+      <dd><span class="zh">支持 UTF-8、UTF-16 与 GB18030（兼容 GBK、GB2312），保留原有的换行格式。</span><span class="en">UTF-8, UTF-16 and GB18030 (covering GBK and GB2312), with line endings kept as they were.</span></dd></div>
+      <div><dt><span class="zh">外部修改提示</span><span class="en">Changes from other apps</span></dt>
+      <dd><span class="zh">文件被其他应用修改或删除时会给出提示；重新载入后，变化的行在行号旁标出。</span><span class="en">You are told when another app changes or deletes the file; after a reload, changed lines are marked in the gutter.</span></dd></div>
+      <div><dt><span class="zh">文件夹与多窗口</span><span class="en">Folders and windows</span></dt>
+      <dd><span class="zh">文件夹在独立窗口中打开，侧边栏随磁盘变化刷新；标签页可拖出为新窗口。</span><span class="en">Folders open in their own windows and the sidebar follows the disk; tabs can be dragged out into new windows.</span></dd></div>
+      <div><dt><span class="zh">外观与语言</span><span class="en">Appearance and language</span></dt>
+      <dd><span class="zh">浅色、深色或跟随系统；提供简繁中文、英语、日语等八种界面语言。</span><span class="en">Light, dark or following the system, in eight interface languages.</span></dd></div>
+      <div><dt><span class="zh">日常编辑</span><span class="en">Everyday editing</span></dt>
+      <dd><span class="zh">多标签页、查找替换、括号配对、缩进参考线，以及按行复制、移动与切换注释。</span><span class="en">Tabs, find and replace, bracket matching, indent guides, and line commands for copying, moving and commenting.</span></dd></div>
+      <div><dt><span class="zh">Markdown 预览</span><span class="en">Markdown preview</span></dt>
+      <dd><span class="zh">并排或单独预览，支持表格、代码块、图片和待办列表。</span><span class="en">Side by side or on its own, with tables, code blocks, pictures and task lists.</span></dd></div>
+    </dl>
+  </div>
+</section>
+
+<div class="wrap" id="download">
+  <div class="dl">
+    <img src="img/icon.png" alt="">
+    <div>
+      <h2><span class="zh">下载 TinyEdit</span><span class="en">Get TinyEdit</span></h2>
+      <p><span class="zh">免费开源，没有内购。需要 macOS 14 及以上，支持 Apple 芯片与 Intel。</span><span class="en">Free and open source, with no in-app purchases. Requires macOS 14 or later, on Apple silicon or Intel.</span></p>
+      <div class="actions">
+        <a class="btn primary" href="https://github.com/YangHanqing/tinyedit/releases/latest">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12"/></svg>
+          <span class="zh">下载最新版（DMG）</span><span class="en">Download the latest DMG</span>
+        </a>
+        <a class="btn" href="https://github.com/YangHanqing/tinyedit/releases"><span class="zh">更新记录</span><span class="en">Release notes</span></a>
+      </div>
+      <p class="install"><span class="zh">打开下载的 DMG，将 TinyEdit 拖入“应用程序”文件夹即可。</span><span class="en">Open the DMG and drag TinyEdit into Applications.</span></p>
+    </div>
+  </div>
+</div>
+</main>
+
+<dialog class="zoom" id="zoom"><img alt="" id="zoomImg"></dialog>
+
+<footer>
+  <div class="wrap">
+    <p class="privacy-line"><span class="zh">TinyEdit 不收集任何数据，仅在使用自定义模型翻译、发送 curl 请求、加载远程图片和检查更新时联网。</span><span class="en">TinyEdit collects no data. It goes online only to translate with a custom model, send a curl request, load a remote picture or check for updates.</span></p>
+    <div class="links">
+      <span>TinyEdit</span>
+      <a href="https://github.com/YangHanqing/tinyedit">GitHub</a>
+      <a href="https://github.com/YangHanqing/tinyedit/issues"><span class="zh">反馈问题</span><span class="en">Report an issue</span></a>
+      <a href="https://github.com/YangHanqing/tinyedit/blob/main/LICENSE">GPL v3</a>
+    </div>
+  </div>
+</footer>
+
+
+<script>
+(function () {
+'use strict';
+var d = document.documentElement;
+var $ = function (id) { return document.getElementById(id); };
+var isZh = function () { return d.lang !== 'en'; };
+var T = function (zh, en) { return isZh() ? zh : en; };
+var store = {
+  get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+};
+var langListeners = [];
+
+/* ---------- header: language, theme, scroll ---------- */
+$('langBtn').onclick = function () {
+  d.lang = isZh() ? 'en' : 'zh-CN';
+  store.set('lang', isZh() ? 'zh' : 'en');
+  langListeners.forEach(function (f) { f(); });
+};
+function themeLabel() {
+  var t = d.getAttribute('data-theme') || 'system';
+  $('themeBtn').title = { system: T('外观：跟随系统', 'Appearance: System'), light: T('外观：浅色', 'Appearance: Light'), dark: T('外观：深色', 'Appearance: Dark') }[t];
+}
+$('themeBtn').onclick = function () {
+  var order = ['system', 'light', 'dark'];
+  var cur = d.getAttribute('data-theme') || 'system';
+  var next = order[(order.indexOf(cur) + 1) % 3];
+  if (next === 'system') d.removeAttribute('data-theme'); else d.setAttribute('data-theme', next);
+  store.set('theme', next);
+  themeLabel();
+};
+themeLabel(); langListeners.push(themeLabel);
+var header = $('top');
+function onScroll() { header.classList.toggle('scrolled', window.scrollY > 8); }
+window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
+
+/* ---------- shared helpers ---------- */
+function gutterFor(ta, g) {
+  var sync = function () {
+    var n = ta.value.split('\n').length, s = '';
+    for (var i = 1; i <= n; i++) s += i + (i < n ? '\n' : '');
+    g.textContent = s;
+    ta.style.height = 'auto';
+    ta.style.height = ta.scrollHeight + 'px';
+  };
+  ta.addEventListener('input', sync);
+  return sync;
+}
+function caretPos(ta) {
+  var before = ta.value.slice(0, ta.selectionStart).split('\n');
+  return 'Ln ' + before.length + ', Col ' + (before[before.length - 1].length + 1);
+}
+function copyText(s) {
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(s).catch(function () {});
+  var t = document.createElement('textarea'); t.value = s; document.body.appendChild(t); t.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  t.remove(); return Promise.resolve();
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+var toastTimer, undoFn = null;
+function toast(msg, undo) {
+  $('toastText').textContent = msg;
+  undoFn = undo || null;
+  $('toastUndo').hidden = !undo;
+  $('toastUndo').textContent = T('撤销', 'Undo');
+  $('toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { $('toast').classList.remove('show'); }, undo ? 4000 : 1800);
+}
+$('toastUndo').onclick = function () { if (undoFn) undoFn(); undoFn = null; $('toast').classList.remove('show'); };
+function utf8ToB64(s) { var b = new TextEncoder().encode(s), r = ''; b.forEach(function (x) { r += String.fromCharCode(x); }); return btoa(r); }
+function b64ToUtf8(s) {
+  var bin = atob(s), bytes = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+}
+function b64url(s) { return utf8ToB64(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function pad(n) { return (n < 10 ? '0' : '') + n; }
+function localTime(sec) { var t = new Date(sec * 1000); return t.getFullYear() + '-' + pad(t.getMonth() + 1) + '-' + pad(t.getDate()) + ' ' + pad(t.getHours()) + ':' + pad(t.getMinutes()) + ':' + pad(t.getSeconds()); }
+
+/* ---------- playground: tabs, status bar, explanation ---------- */
+var play = $('play'), status = $('playStatus'), explain = $('explain');
+var panels = {};
+var current = 'calc';
+function setStatus(left, right) {
+  status.innerHTML = '';
+  left.forEach(function (n) { status.appendChild(n); });
+  var r = document.createElement('div'); r.className = 'r';
+  right.forEach(function (s) { var sp = document.createElement('span'); sp.textContent = s; r.appendChild(sp); });
+  status.appendChild(r);
+}
+function span(text, cls) { var s = document.createElement('span'); s.textContent = text; if (cls) s.className = cls; return s; }
+function btn(text, fn) { var b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.onclick = fn; return b; }
+function showPanel(p) {
+  current = p;
+  play.querySelectorAll('.te-tab').forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.p === p)); });
+  play.querySelectorAll('.panel').forEach(function (el) { el.hidden = el.dataset.panel !== p; });
+  $('toast').classList.remove('show');
+  panels[p].show();
+}
+var playTabs = Array.from(play.querySelectorAll('.te-tabs .te-tab'));
+var stopPlay = function () {};
+playTabs.forEach(function (t) { t.onclick = function () { stopPlay(); showPanel(t.dataset.p); }; });
+function setExplain(title, body, chips) {
+  explain.innerHTML = '<div><h3>' + title + '</h3><p>' + body + '</p></div>';
+  if (chips && chips.length) {
+    var c = document.createElement('div'); c.className = 'chips';
+    chips.forEach(function (ch) { var b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = ch[0]; b.onclick = ch[1]; c.appendChild(b); });
+    explain.firstChild.appendChild(c);
+  }
+}
+
+/* ---------- calculator ---------- */
+var Calc = (function () {
+  // Exact rationals with BigInt; floats once a result can't stay exact (shown with ≈).
+  function gcd(a, b) { a = a < 0n ? -a : a; b = b < 0n ? -b : b; while (b) { var t = a % b; a = b; b = t; } return a; }
+  function Q(n, d) { if (d === undefined) d = 1n; if (d === 0n) return null; if (d < 0n) { n = -n; d = -d; } var g = gcd(n, d) || 1n; return { n: n / g, d: d / g }; }
+  function F(x) { return isFinite(x) ? { f: x } : null; }
+  function toF(v) { return v.f !== undefined ? v.f : Number(v.n) / Number(v.d); }
+  function exact(v) { return v.f === undefined; }
+  function isInt(v) { return exact(v) && v.d === 1n; }
+  function add(a, b, s) { if (exact(a) && exact(b)) return Q(a.n * b.d + s * b.n * a.d, a.d * b.d); return F(toF(a) + Number(s) * toF(b)); }
+  function mul(a, b) { if (exact(a) && exact(b)) return Q(a.n * b.n, a.d * b.d); return F(toF(a) * toF(b)); }
+  function div(a, b) { if (exact(b) && b.n === 0n) return null; if (!exact(b) && toF(b) === 0) return null; if (exact(a) && exact(b)) return Q(a.n * b.d, a.d * b.n); return F(toF(a) / toF(b)); }
+  function isqrt(n) { if (n < 0n) return null; if (n < 2n) return n; var x = BigInt(Math.floor(Math.sqrt(Number(n)))); while (x * x > n) x--; while ((x + 1n) * (x + 1n) <= n) x++; return x; }
+  function pow(a, b) {
+    if (isInt(b) && exact(a)) {
+      var e = b.n; if (e > 2000n || e < -2000n) return F(Math.pow(toF(a), toF(b)));
+      if (e < 0n) { if (a.n === 0n) return null; return Q(a.d ** -e, a.n ** -e); }
+      return Q(a.n ** e, a.d ** e);
+    }
+    return F(Math.pow(toF(a), toF(b)));
+  }
+  function sqrt(v) {
+    if (exact(v)) { if (v.n < 0n) return null; var rn = isqrt(v.n), rd = isqrt(v.d); if (rn * rn === v.n && rd * rd === v.d) return Q(rn, rd); }
+    var x = toF(v); return x < 0 ? null : F(Math.sqrt(x));
+  }
+  var fns = {
+    sqrt: function (a) { return a.length === 1 ? sqrt(a[0]) : null; },
+    cbrt: function (a) { return a.length === 1 ? F(Math.cbrt(toF(a[0]))) : null; },
+    abs: function (a) { return a.length === 1 ? (exact(a[0]) ? Q(a[0].n < 0n ? -a[0].n : a[0].n, a[0].d) : F(Math.abs(a[0].f))) : null; },
+    pow: function (a) { return a.length === 2 ? pow(a[0], a[1]) : null; },
+    max: function (a) { return a.length ? a.reduce(function (x, y) { return toF(y) > toF(x) ? y : x; }) : null; },
+    min: function (a) { return a.length ? a.reduce(function (x, y) { return toF(y) < toF(x) ? y : x; }) : null; },
+    avg: function (a) { if (!a.length) return null; var s = Q(0n); a.forEach(function (x) { s = s && add(s, x, 1n); }); return s && div(s, Q(BigInt(a.length))); },
+    round: function (a) { if (a.length < 1 || a.length > 2) return null; var p = a[1] ? Math.round(toF(a[1])) : 0, m = Math.pow(10, p), x = toF(a[0]); var r = Math.sign(x) * Math.round(Math.abs(x) * m) / m; return toQ(r); },
+    floor: function (a) { return a.length === 1 ? toQ(Math.floor(toF(a[0]))) : null; },
+    ceil: function (a) { return a.length === 1 ? toQ(Math.ceil(toF(a[0]))) : null; },
+    ln: function (a) { return a.length === 1 && toF(a[0]) > 0 ? F(Math.log(toF(a[0]))) : null; },
+    log: function (a) { if (a.length === 1) return toF(a[0]) > 0 ? F(Math.log10(toF(a[0]))) : null; if (a.length === 2) return F(Math.log(toF(a[0])) / Math.log(toF(a[1]))); return null; },
+    log2: function (a) { return a.length === 1 && toF(a[0]) > 0 ? F(Math.log2(toF(a[0]))) : null; },
+    exp: function (a) { return a.length === 1 ? F(Math.exp(toF(a[0]))) : null; },
+    sin: function (a) { return a.length === 1 ? F(Math.sin(toF(a[0]))) : null; },
+    cos: function (a) { return a.length === 1 ? F(Math.cos(toF(a[0]))) : null; },
+    tan: function (a) { return a.length === 1 ? F(Math.tan(toF(a[0]))) : null; },
+    mod: function (a) { if (a.length !== 2) return null; var x = toF(a[0]), y = toF(a[1]); if (y === 0) return null; return toQ(((x % y) + y) % y); }
+  };
+  function toQ(x) { if (!isFinite(x)) return null; var s = String(x); if (/e/i.test(s)) return F(x); var p = s.split('.'); var dec = p[1] || ''; return Q(BigInt(p[0] + dec), 10n ** BigInt(dec.length)); }
+  function normalize(s) {
+    return s.replace(/[！-～]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+      .replace(/[×xX](?=\s*[\d(√.])/g, function (m, i, str) { return /[\d)\s]$/.test(str.slice(0, i)) ? '*' : m; })
+      .replace(/÷/g, '/').replace(/−/g, '-').replace(/\*\*/g, '^').replace(/，/g, ',').replace(/（/g, '(').replace(/）/g, ')');
+  }
+  function parse(src) {
+    var i = 0, ops = 0, depth = 0;
+    function ws() { while (src[i] === ' ' || src[i] === '\t') i++; }
+    function expr() { var v = term(); for (;;) { ws(); var c = src[i]; if ((c === '+' || c === '-') && v) { i++; ops++; var r = term(); if (!r) return null; v = add(v, r, c === '+' ? 1n : -1n); } else return v; } }
+    function term() { var v = unary(); for (;;) { ws(); var c = src[i]; if ((c === '*' || c === '/') && v) { i++; ops++; var r = unary(); if (!r) return null; v = c === '*' ? mul(v, r) : div(v, r); if (!v) return null; } else return v; } }
+    function unary() { ws(); if (src[i] === '-') { i++; var v = unary(); return v && mul(Q(-1n), v); } if (src[i] === '+') { i++; return unary(); } return power(); }
+    function power() { var b = postfix(); ws(); if (b && src[i] === '^') { i++; ops++; var e = unary(); return e && pow(b, e); } return b; }
+    function postfix() {
+      var v = primary();
+      for (;;) {
+        ws(); var c = src[i];
+        if (v && c === '!' && src[i + 1] !== '=') { i++; ops++; if (!isInt(v) || v.n < 0n || v.n > 500n) return null; var r = 1n; for (var k = 2n; k <= v.n; k++) r *= k; v = Q(r); }
+        else if (v && c === '%') { i++; v = div(v, Q(100n)); }
+        else if (v && c === '°') { i++; v = F(toF(v) * Math.PI / 180); }
+        else return v;
+      }
+    }
+    function primary() {
+      ws(); var c = src[i];
+      if (c === '(') { if (++depth > 32) return null; i++; var v = expr(); ws(); if (src[i] !== ')') return null; i++; depth--; return v; }
+      if (c === '√') { i++; ops++; var p = postfix(); return p && sqrt(p); }
+      if (c === 'π') { i++; return F(Math.PI); }
+      var m = /^(\d+\.?\d*|\.\d+)(e[+-]?\d+)?/i.exec(src.slice(i));
+      if (m) { i += m[0].length; var parts = m[1].split('.'), dec = parts[1] || ''; var q = Q(BigInt((parts[0] || '0') + dec), 10n ** BigInt(dec.length)); if (m[2]) q = mul(q, pow(Q(10n), Q(BigInt(m[2].slice(1))))); return q; }
+      m = /^[a-z]+\d?/i.exec(src.slice(i));
+      if (m) {
+        var name = m[0].toLowerCase(); i += m[0].length;
+        if (name === 'pi') return F(Math.PI);
+        if (name === 'e') return F(Math.E);
+        if (!fns[name]) return null;
+        ws(); if (src[i] !== '(') return null; i++; ops++;
+        var args = [];
+        ws(); if (src[i] === ')') { i++; return fns[name](args); }
+        for (;;) { var a = expr(); if (!a) return null; args.push(a); ws(); if (src[i] === ',') { i++; continue; } if (src[i] === ')') { i++; break; } return null; }
+        return fns[name](args);
+      }
+      return null;
+    }
+    var v = expr(); ws();
+    if (i !== src.length || !v || ops === 0) return null;
+    return v;
+  }
+  function format(v) {
+    if (exact(v)) {
+      var d2 = v.d, k2 = 0, k5 = 0;
+      while (d2 % 2n === 0n) { d2 /= 2n; k2++; }
+      while (d2 % 5n === 0n) { d2 /= 5n; k5++; }
+      if (d2 === 1n) {
+        var k = Math.max(k2, k5); if (k > 30) return fmtF(toF(v));
+        var neg = v.n < 0n, n = (neg ? -v.n : v.n) * (10n ** BigInt(k)) / v.d, s = n.toString();
+        if (s.length > 40) return fmtF(toF(v));
+        if (k > 0) { s = s.padStart(k + 1, '0'); s = s.slice(0, s.length - k) + '.' + s.slice(s.length - k); }
+        return { text: (neg ? '-' : '') + s, approx: false };
+      }
+      return fmtF(toF(v));
+    }
+    return fmtF(v.f);
+  }
+  function fmtF(x) {
+    if (!isFinite(x)) return null;
+    var s = Number(x.toPrecision(12)).toString();
+    if (/e/.test(s)) s = Number(x.toPrecision(12)).toExponential().replace(/\.?0+e/, 'e');
+    return { text: s, approx: true };
+  }
+  function proposal(line) {
+    if (line.length > 200) return null;
+    var core = normalize(line).trim();
+    if (!core || /[^0-9a-zA-Z.+\-*/^()%!°√π,=≈ \t]/.test(core)) return null;
+    var spaced = core.replace(/\s+/g, '');
+    if (/^\d{4}([-\/])\d{1,2}\1\d{1,2}/.test(spaced) || /(^|[^\d.])0\d/.test(core) || /^\+?\d+(-\d+)+$/.test(spaced) && spaced.replace(/\D/g, '').length >= 7) return null;
+    var trailing = /\s$/.test(line);
+    var m = /^(.*?)\s*(=|≈)\s*(-?[\d.]+)$/.exec(core);
+    if (m) {
+      var v0 = parse(m[1]); if (!v0) return null; var f0 = format(v0); if (!f0) return null;
+      if (Number(m[3]) === Number(f0.text)) return null;
+      return { ghost: (trailing ? '' : ' ') + '→ ' + f0.text, apply: function (l) { return l.replace(/(=|≈)\s*-?[\d.]+\s*$/, (f0.approx ? '≈' : '=') + ' ' + f0.text); } };
+    }
+    var endsEq = /=$/.test(core);
+    var v = parse(endsEq ? core.slice(0, -1) : core); if (!v) return null;
+    var f = format(v); if (!f) return null;
+    var ins = endsEq ? (trailing ? '' : ' ') + f.text : (trailing ? '' : ' ') + (f.approx ? '≈' : '=') + ' ' + f.text;
+    return { ghost: ins, apply: function (l) { return l + ins; } };
+  }
+  return { proposal: proposal };
+})();
+
+panels.calc = (function () {
+  var box = $('calcLines');
+  var lines = ['12.5 * 4 + 3 = 53', '0.1 + 0.2 = 0.3', 'sqrt(2) ≈ 1.41421356237', '2^10 = 1024', '(1200 - 300) * 15%'];
+  var active = 4, built = false;
+  function row(i) { return box.children[i]; }
+  function render() {
+    box.innerHTML = '';
+    lines.forEach(function (text, i) {
+      var r = document.createElement('div'); r.className = 'ln';
+      r.innerHTML = '<span class="g">' + (i + 1) + '</span><span class="t"><input spellcheck="false" autocomplete="off" aria-label="Line ' + (i + 1) + '"><span class="ghost"></span></span>';
+      var inp = r.querySelector('input');
+      inp.value = text; inp.readOnly = true; inp.tabIndex = -1;
+      inp.style.width = 'auto';
+      wire(inp, i);
+      box.appendChild(r);
+    });
+    sizeAll(); paint();
+  }
+  function size(inp) { inp.style.width = Math.max(1, inp.value.length + 1) + 'ch'; }
+  function sizeAll() { box.querySelectorAll('input').forEach(size); }
+  function paint() {
+    box.querySelectorAll('.ln').forEach(function (r, i) {
+      r.classList.toggle('cur', i === active);
+      var g = r.querySelector('.ghost');
+      var p = i === active ? Calc.proposal(lines[i]) : null;
+      g.textContent = p ? p.ghost : '';
+      r.querySelector('input').style.width = Math.max(1, lines[i].length + (p ? 0 : 1)) + 'ch';
+    });
+    var p = Calc.proposal(lines[active]);
+    setStatus([span('Ln ' + (active + 1))], ['Indent: 4 Spaces', 'UTF-8', 'LF', 'Plain Text']);
+    if (p) status.insertBefore(span(T('按 Tab 插入结果', 'Tab inserts the result')), status.lastChild);
+  }
+  function focusLine(i, atEnd) { var inp = row(i).querySelector('input'); inp.focus(); if (atEnd !== false) inp.setSelectionRange(inp.value.length, inp.value.length); }
+  function wire(inp, i) {
+    inp.addEventListener('focus', function () { active = i; paint(); });
+    inp.addEventListener('input', function () { lines[i] = inp.value; paint(); });
+    inp.addEventListener('keydown', function (e) {
+      var p = Calc.proposal(lines[i]);
+      if (e.key === 'Tab' && !e.shiftKey && p) { e.preventDefault(); lines[i] = p.apply(lines[i]); inp.value = lines[i]; paint(); return; }
+      if (e.key === 'Enter') { e.preventDefault(); var pos = inp.selectionStart; lines.splice(i + 1, 0, lines[i].slice(pos)); lines[i] = lines[i].slice(0, pos); active = i + 1; render(); focusLine(i + 1, false); row(i + 1).querySelector('input').setSelectionRange(0, 0); return; }
+      if (e.key === 'Backspace' && inp.selectionStart === 0 && inp.selectionEnd === 0 && i > 0) { e.preventDefault(); var prevLen = lines[i - 1].length; lines[i - 1] += lines[i]; lines.splice(i, 1); active = i - 1; render(); focusLine(i - 1, false); row(i - 1).querySelector('input').setSelectionRange(prevLen, prevLen); return; }
+      if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); focusLine(i - 1); }
+      if (e.key === 'ArrowDown' && i < lines.length - 1) { e.preventDefault(); focusLine(i + 1); }
+    });
+  }
+  return {
+    show: function () {
+      if (!built) { render(); built = true; } else paint();
+      setExplain(T('随手计算', 'Inline arithmetic'),
+        T('在纯文本中写下一行算式，行尾即显示结果，按 <kbd>Tab</kbd> 写入。小数按十进制精确计算，<code>0.1 + 0.2</code> 的结果是 <code>0.3</code>；无法除尽时以 ≈ 标注。',
+          'Write an expression on a line and its result appears at the end; <kbd>Tab</kbd> writes it in. Decimals are computed exactly, so <code>0.1 + 0.2</code> gives <code>0.3</code>; inexact results are marked ≈. '));
+    }
+  };
+})();
+
+/* ---------- JSON ---------- */
+panels.json = (function () {
+  var box = $('jsonLines');
+  var data = {
+    data: {
+      name: 'TinyEdit',
+      platform: 'macOS',
+      description: 'A plain-text editor for everyday work.',
+      website: 'https://github.com/YangHanqing/tinyedit',
+      theme: '#6BD1C6',
+      updated: 1767225600,
+      escaped: 'line one\nline two',
+      tags: ['notes', 'json', 'markdown'],
+      ready: true
+    }
+  };
+  var rows = [], active = -1;
+  var linkSvg = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2" width="12" height="12" rx="2.5"/><path d="M6.5 9.5 10 6M7 6h3v3"/></svg>';
+  function build() {
+    rows = [];
+    function walk(v, path, key, indent, last) {
+      var comma = last ? '' : ',';
+      var pad = '  '.repeat(indent);
+      var k = key === null ? '' : (typeof key === 'number' ? '' : '<span class="k-key">' + esc(JSON.stringify(key)) + '</span>: ');
+      if (v && typeof v === 'object') {
+        var isArr = Array.isArray(v), entries = isArr ? v.map(function (x, i) { return [i, x]; }) : Object.keys(v).map(function (kk) { return [kk, v[kk]]; });
+        var count = isArr ? T(entries.length + ' 项', entries.length + ' items') : T(entries.length + ' 个键', entries.length + ' keys');
+        rows.push({ html: pad + k + (isArr ? '[' : '{'), path: path, key: key, value: v, mark: '<span class="mark">' + count + '</span>' });
+        entries.forEach(function (e, i) { walk(e[1], path.concat(e[0]), e[0], indent + 1, i === entries.length - 1); });
+        rows.push({ html: pad + (isArr ? ']' : '}') + comma, path: path, key: key, value: v, closing: true });
+        return;
+      }
+      var cls = typeof v === 'string' ? 'k-str' : typeof v === 'number' ? 'k-num' : 'k-lit';
+      var mark = '';
+      if (typeof v === 'string' && /^https?:\/\//.test(v)) mark = '<a class="mark link" href="' + esc(v) + '" target="_blank" rel="noopener" title="Open Link">' + linkSvg + '</a>';
+      else if (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)) mark = '<span class="swatch" style="background:' + v + '"></span>';
+      else if (typeof v === 'number' && /^\d{10}$/.test(String(v))) mark = '<span class="mark">' + localTime(v) + '</span>';
+      rows.push({ html: pad + k + '<span class="' + cls + '">' + esc(JSON.stringify(v)) + '</span>' + comma, path: path, key: key, value: v, mark: mark });
+    }
+    walk(data, [], null, 0, true);
+  }
+  function pathText(p) { return p.reduce(function (s, k) { return typeof k === 'number' ? s + '[' + k + ']' : (s ? s + '.' : '') + k; }, ''); }
+  function render() {
+    build();
+    box.innerHTML = '';
+    rows.forEach(function (r, i) {
+      var el = document.createElement('div'); el.className = 'ln' + (i === active ? ' cur' : '');
+      el.innerHTML = '<span class="g">' + (i + 1) + '</span><span class="t">' + r.html + (r.closing ? '' : (r.mark || '')) + '</span>';
+      el.onclick = function (e) { if (e.target.closest('a')) return; active = i; render(); stat(); };
+      box.appendChild(el);
+    });
+  }
+  function stat() {
+    var r = rows[active];
+    var left = [span(active >= 0 ? 'Ln ' + (active + 1) : 'Ln 1, Col 1')];
+    if (r && r.path.length) {
+      var p = pathText(r.path);
+      left.push(btn(p, function () { copyText(p).then(function () { toast(T('已拷贝路径 ', 'Copied path ') + p); }); }));
+      left[1].className = 'path';
+      if (typeof r.key === 'string') left.push(btn(T('拷贝键', 'Copy Key'), function () { copyText(r.key).then(function () { toast(T('已拷贝键', 'Copied key')); }); }));
+      left.push(btn(T('拷贝值', 'Copy Value'), function () {
+        var v = typeof r.value === 'string' ? r.value : JSON.stringify(r.value, null, 2);
+        copyText(v).then(function () { toast(typeof r.value === 'string' && /\n/.test(r.value) ? T('已拷贝值（转义已还原）', 'Copied value (unescaped)') : T('已拷贝值', 'Copied value')); });
+      }));
+    } else {
+      left.push(span(T('点一行看看', 'Click a line')));
+    }
+    setStatus(left, ['Indent: 2 Spaces', 'UTF-8', 'LF', 'JSON']);
+  }
+  return {
+    show: function () {
+      if (active < 0) active = 5;
+      render(); stat();
+      setExplain(T('JSON 取值', 'Reading JSON values'),
+        T('光标停在键或值上时，底部栏显示其路径，并提供拷贝键、拷贝值；字符串拷贝时还原转义。行尾标注时间戳对应的日期、颜色、链接以及对象的键数。',
+          'With the caret on a key or value, the status bar shows its path along with Copy Key and Copy Value; strings are copied unescaped. Line ends show the date of a timestamp, colors, links and key counts.'));
+    }
+  };
+})();
+
+/* ---------- Markdown tasks ---------- */
+panels.md = (function () {
+  var src = $('mdSrc'), pv = $('mdPv');
+  var doc = null;
+  function initial() {
+    return isZh()
+      ? ['# 发布清单', '', '下周一之前做完。', '', '## 待办', '', '- [x] 修好编辑器的小问题', '- [x] 测试文本工具', '- [ ] 写更新说明', '- [ ] 发布新版本']
+      : ['# Release checklist', '', 'Done by Monday.', '', '## Tasks', '', '- [x] Polish the editor', '- [x] Test the text tools', '- [ ] Write the release notes', '- [ ] Publish the new version'];
+  }
+  function toggle(i) { doc[i] = doc[i].replace(/\[( |x)\]/, function (_, c) { return c === 'x' ? '[ ]' : '[x]'; }); render(); }
+  function render() {
+    src.innerHTML = ''; pv.innerHTML = '';
+    var done = 0, total = 0, list = null;
+    doc.forEach(function (l, i) {
+      var el = document.createElement('div'); el.className = 'ln';
+      var m = /^- \[( |x)\] (.*)$/.exec(l), h;
+      var html;
+      if ((h = /^(#{1,6}) (.*)$/.exec(l))) html = '<span class="k-head">' + esc(l) + '</span>';
+      else if (m) html = m[1] === 'x' ? '<span class="k-done">- <span class="k-box" data-i="' + i + '">[x]</span> ' + esc(m[2]) + '</span>' : '- <span class="k-box" data-i="' + i + '">[ ]</span> ' + esc(m[2]);
+      else html = esc(l);
+      el.innerHTML = '<span class="g">' + (i + 1) + '</span><span class="t">' + html + '</span>';
+      src.appendChild(el);
+      if (h) { var hh = document.createElement(h[1].length === 1 ? 'h1' : 'h2'); hh.textContent = h[2]; pv.appendChild(hh); list = null; }
+      else if (m) {
+        total++; if (m[1] === 'x') done++;
+        if (!list) { list = document.createElement('div'); pv.appendChild(list); }
+        var lab = document.createElement('label'); lab.className = m[1] === 'x' ? 'done' : '';
+        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = m[1] === 'x';
+        cb.onchange = (function (k) { return function () { toggle(k); }; })(i);
+        lab.appendChild(cb); lab.appendChild(document.createTextNode(m[2])); list.appendChild(lab);
+      } else if (l.trim()) { var p = document.createElement('p'); p.textContent = l; pv.appendChild(p); list = null; }
+    });
+    src.querySelectorAll('.k-box').forEach(function (b) { b.onclick = function () { toggle(Number(b.dataset.i)); }; });
+    setStatus([span('Ln 1, Col 1'), span(T('待办 ', 'Tasks ') + done + '/' + total)], ['Indent: 4 Spaces', 'UTF-8', 'LF', 'Markdown']);
+  }
+  langListeners.push(function () { doc = initial(); });
+  return {
+    show: function () {
+      if (!doc) doc = initial();
+      render();
+      setExplain(T('Markdown 和待办', 'Markdown and tasks'),
+        T('按 <kbd>⇧⌘V</kbd> 打开并排预览。<code>- [ ]</code> 即一条待办，点击方框或按 <kbd>⌘↩</kbd> 切换完成状态，底部栏显示完成进度。',
+          'Press <kbd>⇧⌘V</kbd> for a side-by-side preview. <code>- [ ]</code> is a task: click its box or press <kbd>⌘↩</kbd> to toggle it, and the status bar shows the progress.'));
+    }
+  };
+})();
+
+/* ---------- command palette ---------- */
+panels.cmd = (function () {
+  var ta = $('cmdText'), sync = gutterFor(ta, $('cmdGutter')), pal = $('palette'), input = $('palInput'), list = $('palList');
+  var initialText = 'banana\napple\nCherry   \napple\n\ndate\nbanana';
+  ta.value = initialText; ta.readOnly = true; ta.tabIndex = -1;
+  function lines(s) { return s.split('\n'); }
+  function titleCase(s) { return s.replace(/\b([a-z])([a-z]*)/gi, function (_, a, b) { return a.toUpperCase() + b.toLowerCase(); }); }
+  var collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+  var tools = [
+    { g: 'Lines', zh: '按升序排序行', en: 'Sort Lines Ascending', kw: 'order alphabetical', f: function (s) { return lines(s).sort(collator.compare).join('\n'); } },
+    { g: 'Lines', zh: '按降序排序行', en: 'Sort Lines Descending', kw: 'order', f: function (s) { return lines(s).sort(collator.compare).reverse().join('\n'); } },
+    { g: 'Lines', zh: '反转行顺序', en: 'Reverse Lines', kw: 'flip', f: function (s) { return lines(s).reverse().join('\n'); } },
+    { g: 'Lines', zh: '移除重复行', en: 'Remove Duplicate Lines', kw: 'unique dedupe uniq', f: function (s) { var seen = {}; return lines(s).filter(function (l) { if (!l.trim()) return true; if (seen[l]) return false; seen[l] = 1; return true; }).join('\n'); } },
+    { g: 'Lines', zh: '移除空行', en: 'Remove Blank Lines', kw: 'empty', f: function (s) { return lines(s).filter(function (l) { return l.trim(); }).join('\n'); } },
+    { g: 'Clean Up', zh: '移除行尾空白', en: 'Trim Trailing Whitespace', kw: 'spaces', f: function (s) { return lines(s).map(function (l) { return l.replace(/[ \t]+$/, ''); }).join('\n'); } },
+    { g: 'Change Case', zh: '全部大写', en: 'UPPERCASE', kw: 'upper', f: function (s) { return s.toUpperCase(); } },
+    { g: 'Change Case', zh: '全部小写', en: 'lowercase', kw: 'lower', f: function (s) { return s.toLowerCase(); } },
+    { g: 'Change Case', zh: '每个单词首字母大写', en: 'Title Case', kw: 'capitalize', f: titleCase },
+    { g: 'Encode & Decode', zh: 'Base64 编码', en: 'Base64 Encode', kw: 'b64', f: function (s) { return utf8ToB64(s); } },
+    { g: 'Encode & Decode', zh: 'Base64 解码', en: 'Base64 Decode', kw: 'b64', f: function (s) { return b64ToUtf8(s.trim()); } },
+    { g: 'Encode & Decode', zh: 'URL 编码', en: 'URL Encode', kw: 'percent', f: function (s) { return encodeURIComponent(s); } },
+    { g: 'Encode & Decode', zh: 'URL 解码', en: 'URL Decode', kw: 'percent', f: function (s) { return decodeURIComponent(s); } },
+    { g: 'JSON', zh: '格式化 JSON', en: 'Format JSON', kw: 'pretty', f: function (s) { return JSON.stringify(JSON.parse(s), null, 2); } },
+    { g: 'JSON', zh: '压缩 JSON', en: 'Minify JSON', kw: 'compact', f: function (s) { return JSON.stringify(JSON.parse(s)); } }
+  ];
+  var groupNames = { 'Lines': ['行', 'Lines'], 'Clean Up': ['清理', 'Clean Up'], 'Change Case': ['大小写', 'Change Case'], 'Encode & Decode': ['编码与解码', 'Encode & Decode'], 'JSON': ['JSON', 'JSON'] };
+  var shown = [], sel = 0;
+  function dry(t) { try { var r = t.f(ta.value); return r !== ta.value ? r : null; } catch (e) { return null; } }
+  function build() {
+    var q = input.value.trim().toLowerCase();
+    shown = []; list.innerHTML = '';
+    var results = tools.map(function (t) { return { t: t, out: dry(t) }; });
+    function add(header, items) {
+      if (!items.length) return;
+      var h = document.createElement('li'); h.className = 'h'; h.textContent = header; list.appendChild(h);
+      items.forEach(function (it) {
+        var li = document.createElement('li'); li.className = 'c' + (it.out === null ? ' off' : '');
+        li.innerHTML = '<span>' + esc(T(it.t.zh, it.t.en)) + '</span><small>' + esc(T(groupNames[it.t.g][0], groupNames[it.t.g][1])) + '</small>';
+        if (it.out !== null) { var idx = shown.length; shown.push(it); li.dataset.idx = idx; li.onclick = function () { run(idx); }; li.onmousemove = function () { if (sel !== idx) { sel = idx; mark(); } }; }
+        list.appendChild(li);
+      });
+    }
+    if (q) {
+      var hits = results.filter(function (r) { return (r.t.zh + ' ' + r.t.en + ' ' + r.t.kw + ' ' + r.t.g).toLowerCase().indexOf(q) >= 0; });
+      hits.sort(function (a, b) { return (a.out === null) - (b.out === null); });
+      add(T('命令', 'Commands'), hits);
+      if (!hits.length) { var li = document.createElement('li'); li.className = 'h'; li.textContent = T('没有匹配的命令', 'No matching commands'); list.appendChild(li); }
+    } else {
+      var pref = ['Remove Duplicate Lines', 'Remove Blank Lines', 'Trim Trailing Whitespace', 'Sort Lines Ascending', 'Format JSON'];
+      var sug = pref.map(function (n) { return results.find(function (r) { return r.t.en === n; }); }).filter(function (r) { return r.out !== null; }).slice(0, 3);
+      add(T('建议', 'Suggested'), sug);
+      Object.keys(groupNames).forEach(function (g) {
+        var items = results.filter(function (r) { return r.t.g === g && sug.indexOf(r) < 0; });
+        items.sort(function (a, b) { return (a.out === null) - (b.out === null); });
+        add(T(groupNames[g][0], groupNames[g][1]), items);
+      });
+    }
+    sel = 0; mark();
+  }
+  function mark() {
+    list.querySelectorAll('li.c').forEach(function (li) { li.classList.toggle('sel', li.dataset.idx !== undefined && Number(li.dataset.idx) === sel); });
+    var cur = list.querySelector('li.sel'); if (cur) cur.scrollIntoView({ block: 'nearest' });
+  }
+  function run(i) {
+    var it = shown[i]; if (!it) return;
+    var before = ta.value;
+    ta.value = it.out; sync(); close(); stat();
+    play.querySelector('[data-p="cmd"]').classList.add('dirty');
+    toast(T('已运行：', 'Ran ') + T(it.t.zh, it.t.en), function () { ta.value = before; sync(); stat(); });
+  }
+  function peek() { pal.hidden = false; input.value = ''; input.placeholder = T('运行命令或查找标签页', 'Run a command or find a tab'); build(); }
+  function open() { pal.hidden = false; input.value = ''; input.placeholder = T('运行命令或查找标签页', 'Run a command or find a tab'); build(); input.focus({ preventScroll: true }); }
+  function close() { pal.hidden = true; }
+  input.addEventListener('input', build);
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); sel = Math.min(sel + 1, shown.length - 1); mark(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); sel = Math.max(sel - 1, 0); mark(); }
+    else if (e.key === 'Enter') { e.preventDefault(); run(sel); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); ta.focus(); }
+  });
+  function stat() {
+    setStatus([span(caretPos(ta)), btn(T('命令面板 ⇧⌘P', 'Command Palette ⇧⌘P'), function () { pal.hidden ? open() : close(); })], ['Indent: 4 Spaces', 'UTF-8', 'LF', 'Plain Text']);
+  }
+  ['keyup', 'click'].forEach(function (ev) { ta.addEventListener(ev, function () { if (current === 'cmd') stat(); }); });
+  ta.addEventListener('input', function () { play.querySelector('[data-p="cmd"]').classList.add('dirty'); });
+  return {
+    show: function () {
+      sync(); stat();
+      setExplain(T('命令面板', 'Command palette'),
+        T('按 <kbd>⇧⌘P</kbd> 打开，排序、去重、大小写转换、编解码与 JSON 格式化均在其中。面板打开时会先在当前文本上试运行，不会产生变化的命令显示为灰色，常用命令排在前面。所有操作均可撤销。',
+          'Press <kbd>⇧⌘P</kbd> for sorting, deduplication, case conversion, encoding and JSON formatting. Each command is first tried on the current text: those that would change nothing are dimmed, and the likely ones come first. Every change can be undone.'));
+      peek();
+    }
+  };
+})();
+
+showPanel('calc');
+stopPlay = autoAdvance(play, playTabs, function () { return playTabs.findIndex(function (t) { return t.dataset.p === current; }); }, function (i) { showPanel(playTabs[i].dataset.p); }, 5000);
+
+/* ---------- click a screenshot to see it larger ---------- */
+var zoom = $('zoom');
+document.querySelectorAll('.feat .win').forEach(function (w) {
+  w.addEventListener('click', function () {
+    var img = w.querySelector('img:not([hidden])');
+    $('zoomImg').src = img.src; $('zoomImg').alt = img.alt;
+    if (zoom.showModal) zoom.showModal();
+  });
+});
+var zx = 0, zy = 0;
+zoom.addEventListener('pointerdown', function (e) { zx = e.clientX; zy = e.clientY; });
+zoom.addEventListener('click', function (e) { if (Math.abs(e.clientX - zx) < 6 && Math.abs(e.clientY - zy) < 6) zoom.close(); });
+
+/* ---------- JSON screenshots ---------- */
+(function () {
+  var g = $('jsonGallery'), btns = Array.from(g.querySelectorAll('.seg button')), imgs = g.querySelectorAll('.win img'), cur = 0;
+  function show(i) {
+    cur = i;
+    btns.forEach(function (x, k) { x.setAttribute('aria-selected', String(k === i)); });
+    imgs.forEach(function (im, k) { im.hidden = k !== i; });
+  }
+  var stop = autoAdvance(g, btns, function () { return cur; }, show, 5000);
+  btns.forEach(function (b, k) { b.onclick = function () { stop(); show(k); }; });
+})();
+
+/* ---------- auto-advance: shared by the hero, the JSON shots and the playground ---------- */
+// A timer advances to the next control; the CSS line under the current control only shows the
+// progress and pauses together with it. Hover, focus, an off-screen position or a hidden page
+// pause it; any choice by the visitor stops it for good.
+var reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+function autoAdvance(box, controls, current, select, ms) {
+  if (reduceMotion || !('IntersectionObserver' in window)) return function () {};
+  var stopped = false, hover = false, focus = false, visible = false;
+  var timer = null, left = ms, since = 0;
+  box.classList.add('auto'); box.style.setProperty('--dur', ms + 'ms');
+  function paint() {
+    controls.forEach(function (c) { c.classList.remove('run'); });
+    if (stopped) return;
+    var c = controls[current()]; void c.offsetWidth; c.classList.add('run');
+  }
+  function tick() {
+    timer = null; left = ms;
+    select((current() + 1) % controls.length); paint(); run();
+  }
+  function run() { if (!timer && !stopped) { since = Date.now(); timer = setTimeout(tick, left); } }
+  function hold() { if (timer) { clearTimeout(timer); timer = null; left = Math.max(0, left - (Date.now() - since)); } }
+  function state() {
+    var paused = hover || focus || !visible || document.hidden;
+    box.classList.toggle('paused', paused);
+    if (paused) hold(); else run();
+  }
+  box.addEventListener('mouseenter', function () { hover = true; state(); });
+  box.addEventListener('mouseleave', function () { hover = false; state(); });
+  box.addEventListener('focusin', function () { focus = true; state(); });
+  box.addEventListener('focusout', function () { focus = false; state(); });
+  document.addEventListener('visibilitychange', state);
+  new IntersectionObserver(function (es) { visible = es[0].isIntersecting; state(); }, { threshold: 0.2 }).observe(box);
+  paint(); state();
+  return function stop() { stopped = true; hold(); box.classList.remove('auto', 'paused'); paint(); };
+}
+
+/* ---------- hero switcher ---------- */
+(function () {
+  var stage = $('heroStage'), slides = stage.querySelectorAll('.slide'), tabs = $('heroTabs').querySelectorAll('button'), caps = document.querySelectorAll('.hero-nav .cap');
+  var cur = 0;
+  function go(i) {
+    cur = (i + slides.length) % slides.length;
+    slides.forEach(function (s, k) { s.classList.toggle('on', k === cur); });
+    tabs.forEach(function (t, k) { t.setAttribute('aria-selected', String(k === cur)); });
+    caps.forEach(function (c, k) { c.hidden = k !== cur; });
+  }
+  var stop = autoAdvance($('hero'), Array.from(tabs), function () { return cur; }, go, 5000);
+  var pick = function (i) { stop(); go(i); };
+  tabs.forEach(function (t, k) { t.onclick = function () { pick(k); }; });
+  stage.addEventListener('keydown', function (e) { if (e.key === 'ArrowRight') pick(cur + 1); else if (e.key === 'ArrowLeft') pick(cur - 1); });
+  var x0 = null, y0 = null;
+  stage.addEventListener('pointerdown', function (e) { x0 = e.clientX; y0 = e.clientY; });
+  stage.addEventListener('pointerup', function (e) {
+    if (x0 === null) return;
+    var dx = e.clientX - x0, dy = e.clientY - y0; x0 = null;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) pick(cur + (dx < 0 ? 1 : -1));
+  });
+  stage.addEventListener('pointercancel', function () { x0 = null; });
+})();
+
+/* ---------- unsaved tabs illustration ---------- */
+(function () {
+  var docs = function () {
+    return isZh()
+      ? [['周会记录', '', '- 下周起改为周二上午', '- 发布清单由小组共同维护', '- 待确认：测试环境的开放时间'],
+         ['select * from orders', 'where status = \'pending\'', 'order by created_at desc', 'limit 50;'],
+         ['采购清单', '', '- 显示器支架', '- USB-C 线 × 2', '- 笔记本']]
+      : [['Weekly sync', '', '- Moves to Tuesday mornings', '- The release checklist is shared', '- Open: when the test server is up'],
+         ['select * from orders', 'where status = \'pending\'', 'order by created_at desc', 'limit 50;'],
+         ['Shopping list', '', '- Monitor stand', '- USB-C cable × 2', '- Notebook']];
+  };
+  var sel = 0;
+  function render() {
+    var d = docs(), tabs = $('keepTabs'), lines = $('keepLines');
+    tabs.innerHTML = '';
+    d.forEach(function (doc, i) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'te-tab dirty'; b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', String(i === sel));
+      b.innerHTML = '<span>' + esc(doc[0]) + '</span><span class="dot"></span>';
+      b.onclick = function () { sel = i; render(); };
+      tabs.appendChild(b);
+    });
+    lines.innerHTML = d[sel].map(function (l, i) { return '<div class="ln"><span class="g">' + (i + 1) + '</span><span class="t">' + esc(l) + '</span></div>'; }).join('');
+    $('keepStat').textContent = T('未保存 · 已保留', 'Unsaved · kept');
+  }
+  render(); langListeners.push(render);
+})();
+
+langListeners.push(function () { panels[current].show(); });
+})();
+</script>
+</body>
+</html>

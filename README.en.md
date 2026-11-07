@@ -6,6 +6,8 @@ TinyEdit is a **native macOS text editor** for everyday reading and editing of T
 
 Open a file to edit it, or start typing without creating a file first. Tabs and unsaved text are kept automatically, ready for the next launch. Built-in tools cover JSON, text recognition from images, arithmetic and translation, with a sidebar for browsing local folders.
 
+For a quick tour, see the [introduction page](https://yanghanqing.github.io/tinyedit/), with screenshots of the main features.
+
 ![TinyEdit overview](assets/screenshots/overview.png)
 
 ## Features
@@ -71,7 +73,7 @@ Piped text also supports language detection, JSON formatting and terminal color 
 
 ## Download and install
 
-Download the latest version from [Releases](../../releases) and drag TinyEdit into Applications.
+Download the latest version from [Releases](../../releases) (or from the [introduction page](https://yanghanqing.github.io/tinyedit/#download)) and drag TinyEdit into Applications.
 
 - macOS 14 or later, on Apple silicon or Intel Mac.
 - Apple Translation requires macOS 15; table recognition in images requires macOS 26.

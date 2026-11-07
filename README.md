@@ -6,6 +6,8 @@ TinyEdit 是一款 **macOS 原生文本编辑器**，用于日常阅读和编辑
 
 打开文件即可编辑，也可以直接输入内容，无需先新建文件。标签页和未保存的文本会自动保留，退出后再次打开即可继续。编辑器内置 JSON 工具、图片文字识别、随手计算和翻译，侧边栏支持浏览本地文件夹。
 
+想快速了解 TinyEdit，可以先看 [介绍页](https://yanghanqing.github.io/tinyedit/)，主要功能都配有截图说明。
+
 ![TinyEdit 总览](assets/screenshots/overview.png)
 
 ## 功能一览
@@ -71,7 +73,7 @@ curl -s https://api.example.com/items | tinyedit   # 在新标签页中查看命
 
 ## 下载与安装
 
-在 [Releases](../../releases) 页面下载最新版本，将 TinyEdit 拖入“应用程序”文件夹。
+在 [Releases](../../releases) 页面（也可以从[介绍页](https://yanghanqing.github.io/tinyedit/#download)）下载最新版本，将 TinyEdit 拖入“应用程序”文件夹。
 
 - 支持 macOS 14 或更高版本，兼容 Apple 芯片和 Intel Mac。
 - Apple 系统翻译需要 macOS 15，图片中的表格识别需要 macOS 26。
