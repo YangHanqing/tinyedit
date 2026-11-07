@@ -20,6 +20,8 @@ enum TabCloseScope {
     case left
     case right
     case all
+    /// File tabs with nothing unsaved and no conflict, and empty Untitled tabs. Nothing is asked.
+    case unmodified
 }
 
 struct BannerAction: Equatable, Identifiable {

@@ -342,6 +342,25 @@ final class AppStateIntegrationTests: XCTestCase {
         XCTAssertFalse(s.newTab())
         await s.performFlush()
     }
+
+    /// Close Unmodified Tabs asks nothing, so it must never take a tab that holds anything unsaved.
+    func testCloseUnmodifiedKeepsEverythingUnsaved() async throws {
+        let clean = files.appendingPathComponent("clean.txt"), edited = files.appendingPathComponent("edited.txt")
+        try Data("a".utf8).write(to: clean)
+        try Data("b".utf8).write(to: edited)
+        let s = await launch()
+        await s.openURLsAsync([clean, edited])
+        let editedID = try XCTUnwrap(s.bufferID(for: edited))
+        type(" changed", into: s, at: editedID)
+        s.newTab()                                   // empty Untitled: goes
+        s.newTab(); type("notes", into: s)           // Untitled with text: stays
+        let notesID = s.session.selectedBufferID!
+
+        s.closeTabs(.unmodified, around: editedID)
+        XCTAssertEqual(s.session.tabOrder, [editedID, notesID])
+        XCTAssertEqual(s.stores[editedID]?.logicalString(), "b changed")
+        XCTAssertEqual(try String(contentsOf: edited, encoding: .utf8), "b")
+    }
 }
 
 /// Typing latency on the main thread: the keystroke path must stay O(1) on a large document.

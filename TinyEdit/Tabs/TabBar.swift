@@ -165,6 +165,8 @@ struct TabBar: View {
         Button("Close Tabs to the Right") { appState.closeTabs(.right, around: id) }
             .disabled(appState.tabsToClose(.right, around: id).isEmpty)
         Button("Close All Tabs") { appState.closeTabs(.all, around: id) }
+        Button("Close Unmodified Tabs") { appState.closeTabs(.unmodified, around: id) }
+            .disabled(appState.tabsToClose(.unmodified, around: id).isEmpty)
         Divider()
         compareMenu(for: id)
         Divider()

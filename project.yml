@@ -18,9 +18,9 @@ settings:
   base:
     # Shared by the app and its Quick Look extension, which must carry the same version.
     # The patch number goes up with each feature.
-    MARKETING_VERSION: "0.5.4"
+    MARKETING_VERSION: "0.5.5"
     # yyyyMMddHHmm. scripts/install.sh stamps the minute it builds.
-    CURRENT_PROJECT_VERSION: "202611070055"
+    CURRENT_PROJECT_VERSION: "202611071454"
     SWIFT_VERSION: "5.0"
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_EMIT_LOC_STRINGS: YES

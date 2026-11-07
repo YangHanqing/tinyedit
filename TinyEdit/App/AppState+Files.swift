@@ -427,7 +427,18 @@ extension AppState {
         case .left: return Array(session.tabOrder[..<index])
         case .right: return Array(session.tabOrder[(index + 1)...])
         case .all: return session.tabOrder
+        case .unmodified: return session.tabOrder.filter { isUnmodified($0, rehash: false) }
         }
+    }
+
+    /// Closing it loses nothing and asks nothing: a file tab that matches its last save, with no conflict or
+    /// broken bookmark, or an empty Untitled tab the user did not name. `rehash` false trusts the dirty flag
+    /// (menus); the close itself hashes the text again.
+    func isUnmodified(_ id: UUID, rehash: Bool) -> Bool {
+        guard let b = session.buffers[id] else { return false }
+        if b.isUntitled { return !b.titleIsCustom && (stores[id]?.length ?? 1) == 0 }
+        guard fileURLs[id] != nil, b.conflict == .none else { return false }
+        return rehash ? !isDirtyNow(id) : !b.dirty
     }
 
     /// Closes left to right, asking about each tab with unsaved changes. Cancel stops the rest.
@@ -436,12 +447,23 @@ extension AppState {
         guard launchGateOpen else { return }
         let ids = tabsToClose(scope, around: id)
         guard !ids.isEmpty else { return }
+        if scope == .unmodified { return closeUnmodifiedTabs(ids, keeping: id) }
         if scope != .all, let selected = session.selectedBufferID, ids.contains(selected) { selectTab(id) }
         Task {
             for target in ids {
                 guard await closeTabAsync(target) else { return }
             }
         }
+    }
+
+    /// No questions, so no task: each tab is checked again with a fresh hash and removed at once.
+    private func closeUnmodifiedTabs(_ ids: [UUID], keeping id: UUID) {
+        guard !transferring, !closing else { return }
+        let targets = ids.filter { isUnmodified($0, rehash: true) }
+        guard !targets.isEmpty else { return }
+        if let selected = session.selectedBufferID, targets.contains(selected), !targets.contains(id) { selectTab(id) }
+        for target in targets { removeBuffer(target) }
+        showToast(String(localized: "Closed \(targets.count) tabs"))
     }
 
     func copyPath(of id: UUID) {
