@@ -364,6 +364,25 @@ final class AppStateIntegrationTests: XCTestCase {
         XCTAssertEqual(s.stores[editedID]?.logicalString(), "b changed")
         XCTAssertEqual(try String(contentsOf: edited, encoding: .utf8), "b")
     }
+
+    /// Save All writes every edited file tab and leaves tabs without a file as they are.
+    func testSaveAllWritesEditedFilesOnly() async throws {
+        let one = files.appendingPathComponent("one.txt"), two = files.appendingPathComponent("two.txt")
+        try Data("1\n".utf8).write(to: one)
+        try Data("2\n".utf8).write(to: two)
+        let s = await launch()
+        await s.openURLsAsync([one, two])
+        type("one\n", into: s, at: try XCTUnwrap(s.bufferID(for: one)))
+        type("two\n", into: s, at: try XCTUnwrap(s.bufferID(for: two)))
+        s.newTab(); type("draft", into: s)
+        let draft = s.session.selectedBufferID!
+
+        await s.saveAllAsync()
+        XCTAssertEqual(try String(contentsOf: one, encoding: .utf8), "1\none\n")
+        XCTAssertEqual(try String(contentsOf: two, encoding: .utf8), "2\ntwo\n")
+        XCTAssertTrue(s.isDirtyNow(draft))
+        XCTAssertEqual(s.session.orderedBuffers.filter { s.isDirtyNow($0.id) }.map(\.id), [draft])
+    }
 }
 
 /// Typing latency on the main thread: the keystroke path must stay O(1) on a large document.

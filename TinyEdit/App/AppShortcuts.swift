@@ -22,6 +22,7 @@ enum AppShortcut {
     static let lastTab = KeyboardShortcut("9", modifiers: .command)
     static let save = KeyboardShortcut("s", modifiers: .command)
     static let saveAs = KeyboardShortcut("s", modifiers: [.command, .shift])
+    static let saveAll = KeyboardShortcut("s", modifiers: [.command, .option])
 
     static let find = KeyboardShortcut("f", modifiers: .command)
     static let findAndReplace = KeyboardShortcut("f", modifiers: [.command, .option])
@@ -97,6 +98,7 @@ enum ShortcutCatalog {
             ShortcutItem("Show Last Tab", AppShortcut.lastTab),
             ShortcutItem("Save", AppShortcut.save),
             ShortcutItem("Save As…", AppShortcut.saveAs),
+            ShortcutItem("Save All", AppShortcut.saveAll),
         ]),
         ShortcutGroup(title: "Editing", items: [
             ShortcutItem("Undo", key("z", .command)),

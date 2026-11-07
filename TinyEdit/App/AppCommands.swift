@@ -41,6 +41,8 @@ struct AppCommands: Commands {
                 .keyboardShortcut(AppShortcut.save)
             Button("Save As…") { appState.saveAs() }
                 .keyboardShortcut(AppShortcut.saveAs)
+            Button("Save All") { appState.saveAll() }
+                .keyboardShortcut(AppShortcut.saveAll)
         }
         CommandGroup(after: .windowSize) {
             Divider()

@@ -158,6 +158,30 @@ extension AppState {
         Task { _ = await saveAsFlow(id) }
     }
 
+    /// Every file tab with unsaved changes, one after another, each as Save would (a conflict still asks).
+    /// Tabs without a file (Untitled, a broken bookmark) are left alone: a save panel per tab is not wanted.
+    func saveAll() {
+        guard launchGateOpen else { return }
+        Task { await saveAllAsync() }
+    }
+
+    func saveAllAsync() async {
+        let dirty = session.tabOrder.filter { isDirtyNow($0) }
+        let files = dirty.filter { fileURLs[$0] != nil && session.buffers[$0]?.isUntitled == false }
+        let fileless = dirty.count - files.count
+        var saved = 0
+        for id in files where session.buffers[id] != nil {
+            if await saveFlow(id) { saved += 1 }
+        }
+        if saved > 0 { showToast(String(localized: "Saved \(saved) files")) }
+        if fileless > 0 {
+            if saved > 0 { try? await Task.sleep(for: .milliseconds(1700)) }
+            showToast(String(localized: "Tabs without a file were not saved. Use Save As."))
+        } else if files.isEmpty {
+            showToast(String(localized: "No unsaved files"))
+        }
+    }
+
     /// Untitled and broken-bookmark buffers go through Save As. External conflicts confirm first.
     @discardableResult
     func saveFlow(_ id: UUID) async -> Bool {
