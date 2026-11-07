@@ -343,21 +343,24 @@ final class AppStateIntegrationTests: XCTestCase {
         await s.performFlush()
     }
 
-    /// Close Unmodified Tabs asks nothing, so it must never take a tab that holds anything unsaved.
+    /// Close Unmodified Tabs asks nothing, so it must never take a tab that holds anything unsaved,
+    /// and no batch close takes a pinned tab.
     func testCloseUnmodifiedKeepsEverythingUnsaved() async throws {
         let clean = files.appendingPathComponent("clean.txt"), edited = files.appendingPathComponent("edited.txt")
-        try Data("a".utf8).write(to: clean)
-        try Data("b".utf8).write(to: edited)
+        let pinned = files.appendingPathComponent("pinned.txt")
+        for (f, text) in [(clean, "a"), (edited, "b"), (pinned, "c")] { try Data(text.utf8).write(to: f) }
         let s = await launch()
-        await s.openURLsAsync([clean, edited])
+        await s.openURLsAsync([clean, edited, pinned])
         let editedID = try XCTUnwrap(s.bufferID(for: edited))
+        let pinnedID = try XCTUnwrap(s.bufferID(for: pinned))
+        s.setPinned(pinnedID, true)
         type(" changed", into: s, at: editedID)
         s.newTab()                                   // empty Untitled: goes
         s.newTab(); type("notes", into: s)           // Untitled with text: stays
         let notesID = s.session.selectedBufferID!
 
         s.closeTabs(.unmodified, around: editedID)
-        XCTAssertEqual(s.session.tabOrder, [editedID, notesID])
+        XCTAssertEqual(s.session.tabOrder, [pinnedID, editedID, notesID])
         XCTAssertEqual(s.stores[editedID]?.logicalString(), "b changed")
         XCTAssertEqual(try String(contentsOf: edited, encoding: .utf8), "b")
     }

@@ -419,8 +419,12 @@ extension AppState {
         }
     }
 
-    /// The tabs a tab's context menu would close, in tab order.
+    /// The tabs a tab's context menu would close, in tab order. Pinned tabs are never among them.
     func tabsToClose(_ scope: TabCloseScope, around id: UUID) -> [UUID] {
+        tabsInScope(scope, around: id).filter { session.buffers[$0]?.isPinned != true }
+    }
+
+    private func tabsInScope(_ scope: TabCloseScope, around id: UUID) -> [UUID] {
         guard let index = session.tabOrder.firstIndex(of: id) else { return [] }
         switch scope {
         case .others: return session.tabOrder.filter { $0 != id }
@@ -448,7 +452,7 @@ extension AppState {
         let ids = tabsToClose(scope, around: id)
         guard !ids.isEmpty else { return }
         if scope == .unmodified { return closeUnmodifiedTabs(ids, keeping: id) }
-        if scope != .all, let selected = session.selectedBufferID, ids.contains(selected) { selectTab(id) }
+        if !ids.contains(id), let selected = session.selectedBufferID, ids.contains(selected) { selectTab(id) }
         Task {
             for target in ids {
                 guard await closeTabAsync(target) else { return }

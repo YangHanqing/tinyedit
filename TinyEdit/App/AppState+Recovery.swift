@@ -181,6 +181,7 @@ extension AppState {
             session.buffers[buffer.id] = buffer
             session.tabOrder.append(buffer.id)
         }
+        session.keepPinnedFirst()   // an entry the manifest's order missed is appended last
         if let sel = plan.selectedID, session.buffers[sel] != nil {
             session.selectedBufferID = sel
         } else {

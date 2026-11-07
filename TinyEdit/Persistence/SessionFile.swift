@@ -4,6 +4,7 @@ struct BufferMetadata: Codable, Equatable, Sendable {
     var id: UUID
     var title: String
     var titleIsCustom: Bool?         // absent in manifests written before tab renaming
+    var isPinned: Bool?              // absent before pinned tabs
     var fileBookmark: Data?
     var fileDisplayName: String?
     var directoryPath: String?       // absent in manifests written before the title-bar path
@@ -29,6 +30,7 @@ struct BufferMetadata: Codable, Equatable, Sendable {
         id = b.id
         title = b.title
         titleIsCustom = b.titleIsCustom
+        isPinned = b.isPinned ? true : nil
         fileBookmark = b.fileBookmark
         fileDisplayName = b.fileDisplayName
         directoryPath = b.directoryPath
@@ -60,6 +62,7 @@ struct BufferMetadata: Codable, Equatable, Sendable {
               let conflict = ConflictState(rawValue: conflict) else { return nil }
         var b = EditorBuffer(id: id, title: title)
         b.titleIsCustom = titleIsCustom ?? false
+        b.isPinned = isPinned ?? false
         b.fileBookmark = fileBookmark
         b.fileDisplayName = fileDisplayName
         b.directoryPath = directoryPath

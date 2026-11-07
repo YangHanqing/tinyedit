@@ -304,6 +304,7 @@ final class AppState {
         session.tabOrder.remove(at: from)
         let to = session.tabOrder.firstIndex(of: target) ?? session.tabOrder.endIndex
         session.tabOrder.insert(id, at: to)
+        session.keepPinnedFirst()
         flushImmediately()
     }
 
@@ -311,6 +312,17 @@ final class AppState {
         guard let from = session.tabOrder.firstIndex(of: id), from != session.tabOrder.count - 1 else { return }
         session.tabOrder.remove(at: from)
         session.tabOrder.append(id)
+        session.keepPinnedFirst()
+        flushImmediately()
+    }
+
+    /// A pinned tab moves to the end of the pinned ones; an unpinned one to the start of the rest.
+    func setPinned(_ id: UUID, _ pinned: Bool) {
+        guard let b = session.buffers[id], b.isPinned != pinned, let from = session.tabOrder.firstIndex(of: id) else { return }
+        session.buffers[id]?.isPinned = pinned
+        session.tabOrder.remove(at: from)
+        let firstUnpinned = session.tabOrder.firstIndex { session.buffers[$0]?.isPinned != true } ?? session.tabOrder.endIndex
+        session.tabOrder.insert(id, at: firstUnpinned)
         flushImmediately()
     }
 

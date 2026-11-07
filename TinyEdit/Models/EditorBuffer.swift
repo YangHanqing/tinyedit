@@ -8,6 +8,8 @@ struct EditorBuffer: Identifiable, Equatable, Sendable {
     var title: String
     /// An Untitled tab the user renamed keeps `title` instead of naming itself from its text.
     var titleIsCustom = false
+    /// Pinned tabs sit first in the strip (`EditorSession.keepPinnedFirst`) and batch closes leave them.
+    var isPinned = false
     var fileBookmark: Data?          // nil iff Untitled
     var fileDisplayName: String?
     /// Absolute parent directory, written when the file URL is resolved (open, save, move,

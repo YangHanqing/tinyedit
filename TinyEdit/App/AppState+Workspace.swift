@@ -327,6 +327,7 @@ extension AppState {
         session.buffers[buffer.id] = buffer
         let index = target.flatMap { session.tabOrder.firstIndex(of: $0) } ?? session.tabOrder.endIndex
         session.tabOrder.insert(buffer.id, at: index)
+        session.keepPinnedFirst()
         if select {
             host.captureViewState()
             session.selectedBufferID = buffer.id

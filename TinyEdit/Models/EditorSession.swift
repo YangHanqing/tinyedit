@@ -14,6 +14,14 @@ struct EditorSession: Equatable, Sendable {
 
     var orderedBuffers: [EditorBuffer] { tabOrder.compactMap { buffers[$0] } }
 
+    /// Pinned tabs first, each group in its own order. Run after anything that reorders or adds a pinned tab.
+    mutating func keepPinnedFirst() {
+        let pinned = tabOrder.filter { buffers[$0]?.isPinned == true }
+        guard !pinned.isEmpty else { return }
+        let order = pinned + tabOrder.filter { buffers[$0]?.isPinned != true }
+        if order != tabOrder { tabOrder = order }
+    }
+
     /// Smallest positive integer not used by another Untitled title.
     /// English on purpose: the session stores it, and `EditorBuffer.displayTitle` translates it.
     func nextUntitledTitle() -> String {

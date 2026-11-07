@@ -21,6 +21,12 @@ struct TabItem: View {
                     .foregroundStyle(Color.warning)
                     .accessibilityLabel("File conflict")
             }
+            if buffer.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.textSecondary)
+                    .accessibilityLabel("Pinned")
+            }
             if isRenaming {
                 TextField("", text: $draft)
                     .textFieldStyle(.plain)
