@@ -15,6 +15,64 @@ final class WorkspaceTests: XCTestCase {
         _ = await Workspaces.shared.close(state, asking: false)
     }
 
+    func testExternalOpenRoutesByOwnershipAndKeepsExplicitOpensInTheirWindow() async throws {
+        let ws = Workspaces.shared
+        ws.start()
+        await ws.main.restoreTask?.value
+        let parent = await window(), nested = await window()
+        let project = parent.root.appendingPathComponent("project")
+        let child = project.appendingPathComponent("child")
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        parent.addFolder(project)
+        nested.addFolder(child)
+        let owned = project.appendingPathComponent("owned.txt")
+        let deep = child.appendingPathComponent("deep.txt")
+        let free = parent.root.appendingPathComponent("free.txt")
+        let explicit = parent.root.appendingPathComponent("explicit.txt")
+        for file in [owned, deep, free, explicit] {
+            try file.lastPathComponent.write(to: file, atomically: true, encoding: .utf8)
+        }
+
+        // An explicit in-window open keeps a free file there, including on later external opens.
+        await parent.openURLsAsync([explicit])
+        let existing = try XCTUnwrap(parent.bufferID(for: explicit))
+        parent.newTab()
+        await ws.openURLsAsync([explicit])
+        XCTAssertEqual(parent.session.selectedBufferID, existing)
+        XCTAssertNil(ws.main.bufferID(for: explicit))
+
+        nested.showWindow()
+        ws.main.hideWindow(ws.main.window)
+        // Ownership wins over the active window; unowned files go to the hidden main window.
+        await ws.openURLsAsync([free, deep, owned])
+        let freeID = try XCTUnwrap(ws.main.bufferID(for: free))
+        XCTAssertEqual(ws.main.session.selectedBufferID, freeID)
+        XCTAssertEqual(ws.main.activeStore?.logicalString(), "free.txt")
+        XCTAssertTrue(ws.main.window?.isVisible == true)
+        XCTAssertTrue(NSApp.orderedWindows.first { $0.isVisible && ws.state(for: $0) != nil } === ws.main.window)
+        XCTAssertNotNil(nested.bufferID(for: deep))
+        XCTAssertNotNil(parent.bufferID(for: owned))
+        XCTAssertNil(parent.bufferID(for: free))
+        XCTAssertNil(parent.bufferID(for: deep))
+
+        // Reopening selects the same tab instead of adding another one.
+        let count = ws.main.session.tabOrder.count
+        await ws.openURLsAsync([free])
+        XCTAssertEqual(ws.main.bufferID(for: free), freeID)
+        XCTAssertEqual(ws.main.session.tabOrder.count, count)
+        ws.main.removeBuffer(freeID, rememberClosed: false)
+
+        let pipe = parent.root.appendingPathComponent("input.tinyedit-stdin")
+        try "piped text".write(to: pipe, atomically: true, encoding: .utf8)
+        nested.showWindow()
+        await ws.openURLsAsync([pipe])
+        XCTAssertEqual(ws.main.activeStore?.logicalString(), "piped text")
+        let pipeID = try XCTUnwrap(ws.main.session.selectedBufferID)
+        ws.main.removeBuffer(pipeID, rememberClosed: false)
+        await dispose(nested)
+        await dispose(parent)
+    }
+
     func testFailedTransferKeepsSourceTextAndRecovery() async throws {
         let source = await window()
         let destination = await window()

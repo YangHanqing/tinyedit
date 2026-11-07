@@ -117,6 +117,8 @@ struct WindowAccessor: NSViewRepresentable {
         DispatchQueue.main.async { [weak v] in
             guard let window = v?.window else { return }
             window.isRestorable = false
+            // Opening a file reuses this window; do not replay AppKit's window-opening animation.
+            window.animationBehavior = .none
             window.isMovableByWindowBackground = true
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true

@@ -140,7 +140,10 @@ extension AppState {
 
     /// New Tab while the red button has hidden the window brings it back.
     func showWindow() {
-        window?.makeKeyAndOrderFront(nil)
+        guard let window else { return }
+        // Selecting a tab in the front window needs no window presentation or animation.
+        guard !window.isVisible || window.isMiniaturized || !window.isKeyWindow else { return }
+        window.makeKeyAndOrderFront(nil)
     }
 
     /// `⌘N` and `⌘T`: a tab in this window, shown again if the red button hid it.

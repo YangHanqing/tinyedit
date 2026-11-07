@@ -134,17 +134,20 @@ final class Workspaces {
     // MARK: Opening files
 
     /// Finder, the Dock and the command line. A file already open goes to its window; else to the window
-    /// whose folder holds it; else to the window the user was last in. Folders open as `openFolder` decides.
+    /// whose folder holds it; else to the main window. Folders open as `openFolder` decides.
     func openURLs(_ urls: [URL]) {
         guard started else { pendingURLs.append(contentsOf: urls); return }
-        Task {
-            // Folder ownership and open tabs are unknown until every restored session is loaded.
-            for state in all { await state.restoreTask?.value }
-            routeURLs(urls)
-        }
+        Task { await openURLsAsync(urls) }
     }
 
-    private func routeURLs(_ urls: [URL]) {
+    func openURLsAsync(_ urls: [URL]) async {
+        guard started else { pendingURLs.append(contentsOf: urls); return }
+        // Folder ownership and open tabs are unknown until every restored session is loaded.
+        for state in all { await state.restoreTask?.value }
+        await routeURLs(urls)
+    }
+
+    private func routeURLs(_ urls: [URL]) async {
         var groups: [(AppState, [URL])] = []
         func add(_ url: URL, to state: AppState) {
             if let i = groups.firstIndex(where: { $0.0 === state }) { groups[i].1.append(url) } else { groups.append((state, [url])) }
@@ -157,11 +160,13 @@ final class Workspaces {
                 openFolder(url)
                 continue
             }
-            add(url, to: holder(of: url) ?? folderOwner(of: url) ?? target)
+            add(url, to: holder(of: url) ?? folderOwner(of: url) ?? main)
         }
         // A line to go to or piped text follows the files it came with.
-        for request in requests { add(request, to: groups.first?.0 ?? target) }
-        for (state, urls) in groups { state.openURLs(urls) }
+        for request in requests { add(request, to: groups.first?.0 ?? main) }
+        for (state, urls) in groups { await state.openURLsAsync(urls) }
+        // A batch may span windows. Keep the first file's window in front regardless of read duration.
+        if groups.count > 1 { groups.first?.0.showWindow() }
     }
 
     /// The window with a tab for this file.
@@ -403,6 +408,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate {
         window.titlebarSeparatorStyle = .none
         window.isReleasedWhenClosed = false
         window.isRestorable = false
+        window.animationBehavior = .none
         window.tabbingMode = .disallowed
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.title = "TinyEdit"

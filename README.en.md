@@ -65,7 +65,9 @@ tinyedit main.swift:120       # jump to line 120; main.swift:120:5 also specifie
 curl -s https://api.example.com/items | tinyedit   # view command output in a new tab
 ```
 
-Piped text also supports language detection, JSON formatting and terminal color code cleanup. Run `tinyedit -h` for all options.
+Files opened from the command line or Finder select an existing tab when available, otherwise open in the window whose workspace folder contains them, or in the main window for other files. For a batch of files, the first file's window comes to the front. Open and drag-and-drop actions inside a window use that window.
+
+Piped text also supports language detection, JSON formatting and terminal color code cleanup; piped text without file arguments opens in the main window. Run `tinyedit -h` for all options.
 
 ## Download and install
 
