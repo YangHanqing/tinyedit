@@ -7,16 +7,22 @@ enum QuickLookContent: Sendable {
     /// Every other text: highlighted as the editor would, with a one-line JSON document formatted.
     case text(String, spans: [HighlightSpan])
 
-    /// Blocking. Same decoding (BOM, UTF-8, GB18030) and size policy as the editor.
+    /// Blocking. Same decoding (BOM, UTF-8, GB18030) and size policy as the editor. Of a file larger than the
+    /// preview shows, only the first part is read (cut at a line), so Space on a 2 GB log is instant.
     static func load(_ url: URL) throws -> QuickLookContent {
-        var text = try FileLoader.load(from: url).logicalLF
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        let partial = size > HighlightPolicy.offLimit
+        var text = (partial ? try FileLoader.loadHead(of: url, maxBytes: HighlightPolicy.offLimit)
+                            : try FileLoader.load(from: url)).logicalLF
         let language = EditorLanguage.detect(fileName: url.lastPathComponent, text: text)
         if language == .markdown {
-            guard text.utf8.count <= HighlightPolicy.offLimit else { return .markdown(nil) }
+            guard !partial, text.utf8.count <= HighlightPolicy.offLimit else { return .markdown(nil) }
             return .markdown(try? MarkdownDocument.parse(text))
         }
         if text.utf16.count > HighlightPolicy.offLimit {
             text = String(decoding: Array(text.utf16.prefix(HighlightPolicy.offLimit)), as: UTF16.self) + "\n…"
+        } else if partial {
+            text += "\n…"
         } else if language == .json, !text.trimmingCharacters(in: .whitespacesAndNewlines).contains("\n"),
                   case .formatted(let pretty, _) = JSONFormatter.format(text: text, selection: nil) {
             text = pretty

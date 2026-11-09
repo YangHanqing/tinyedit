@@ -1,13 +1,52 @@
 import AppKit
 
+/// Regular-expression find, shared by the editor and large files: `^` and `$` match at line breaks, and a
+/// match of nothing (`^`, `a*`) is not a match, so Next always moves and counts mean something.
+enum FindPattern {
+    nonisolated static func regex(_ pattern: String, caseSensitive: Bool) -> NSRegularExpression? {
+        try? NSRegularExpression(pattern: pattern, options: caseSensitive ? [.anchorsMatchLines] : [.anchorsMatchLines, .caseInsensitive])
+    }
+
+    nonisolated static func matches(_ regex: NSRegularExpression, in text: NSString, range: NSRange? = nil,
+                                    limit: Int = .max) -> [NSTextCheckingResult] {
+        var out: [NSTextCheckingResult] = []
+        regex.enumerateMatches(in: text as String, options: [], range: range ?? NSRange(location: 0, length: text.length)) { m, _, stop in
+            guard let m, m.range.length > 0 else { return }
+            out.append(m)
+            if out.count >= limit { stop.pointee = true }
+        }
+        return out
+    }
+
+    nonisolated static func ranges(_ regex: NSRegularExpression, in text: NSString) -> [NSRange] {
+        matches(regex, in: text).map(\.range)
+    }
+
+    /// `text` with the matches at `ranges` replaced by the template (`$1`; `\$` for a dollar sign).
+    nonisolated static func replacing(_ regex: NSRegularExpression, in text: NSString, ranges: [NSRange],
+                                      template: String) -> String {
+        let out = NSMutableString(string: text)
+        for r in ranges.reversed() {
+            guard let m = regex.firstMatch(in: text as String, options: [], range: r), m.range == r else { continue }
+            out.replaceCharacters(in: r, with: regex.replacementString(for: m, in: text as String, offset: 0, template: template))
+        }
+        return out as String
+    }
+}
+
 enum FindMatches {
     /// Counting stops here; the card then shows "9999+".
     static let limit = 9_999
 
     /// Every non-overlapping match, in document order.
-    nonisolated static func ranges(of query: String, in text: NSString, caseSensitive: Bool,
+    nonisolated static func ranges(of query: String, in text: NSString, caseSensitive: Bool, regex: Bool = false,
                                    limit: Int = limit) -> (ranges: [NSRange], capped: Bool) {
         guard !query.isEmpty else { return ([], false) }
+        if regex {
+            guard let re = FindPattern.regex(query, caseSensitive: caseSensitive) else { return ([], false) }
+            let found = FindPattern.matches(re, in: text, limit: limit + 1).map(\.range)
+            return (Array(found.prefix(limit)), found.count > limit)
+        }
         let options: NSString.CompareOptions = caseSensitive ? [.literal] : [.literal, .caseInsensitive]
         var ranges: [NSRange] = []
         var from = 0
@@ -58,7 +97,7 @@ final class FindMatchController {
 
     /// Searches `store` off the main thread after `delay`. With `selectFrom`, the first match at or after
     /// that offset is selected and scrolled to (typing in the find field).
-    func schedule(store: BufferTextStore, query: String, caseSensitive: Bool, delay: Duration,
+    func schedule(store: BufferTextStore, query: String, caseSensitive: Bool, regex: Bool = false, delay: Duration,
                   selectFrom: Int? = nil) {
         task?.cancel()
         guard !query.isEmpty else {
@@ -72,7 +111,7 @@ final class FindMatchController {
             let generation = store.generation
             let text = store.logicalString()
             let (ranges, capped) = await Task.detached(priority: .userInitiated) {
-                FindMatches.ranges(of: query, in: text as NSString, caseSensitive: caseSensitive)
+                FindMatches.ranges(of: query, in: text as NSString, caseSensitive: caseSensitive, regex: regex)
             }.value
             guard let self, !Task.isCancelled, store.generation == generation,
                   let host = self.host, host.activeStore === store else { return }

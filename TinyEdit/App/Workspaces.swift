@@ -155,6 +155,9 @@ final class Workspaces {
         var requests: [URL] = []
         for url in urls {
             if CommandLineTool.isRequest(url) { requests.append(url); continue }
+            // Finder's New Text File: to the window whose folder holds that folder, else the main window.
+            if let folder = FinderMenu.directory(from: url) { add(url, to: folderOwner(of: folder) ?? main); continue }
+            guard url.isFileURL else { continue }
             var isDir: ObjCBool = false
             if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
                 openFolder(url)

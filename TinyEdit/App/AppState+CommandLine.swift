@@ -6,6 +6,7 @@ extension AppState {
     func runCommandLineRequests(_ urls: [URL]) async {
         guard launchGateOpen else { return pendingRequestURLs.append(contentsOf: urls) }
         for url in urls {
+            if let folder = FinderMenu.directory(from: url) { newTextFile(in: folder); continue }
             switch CommandLineTool.request(at: url) {
             case .pipedText(let file): await openPipedText(file)
             case .goTo(let file, let line, let column): goTo(line: line, column: column, inFileAt: file)
@@ -13,6 +14,19 @@ extension AppState {
             }
             removeSpooled(url)
         }
+    }
+
+    /// Finder's New Text File: an Untitled tab whose first Save starts in `folder`. An empty Untitled tab in
+    /// front (the one a launch makes, say) is used instead of adding another.
+    private func newTextFile(in folder: URL) {
+        if let id = session.selectedBufferID, let b = session.buffers[id], b.isUntitled, !b.titleIsCustom,
+           b.saveDirectory == nil, (stores[id]?.length ?? 1) == 0 {
+            session.buffers[id]?.saveDirectory = folder.path
+        } else {
+            guard newTab(), let id = session.selectedBufferID else { return }
+            session.buffers[id]?.saveDirectory = folder.path
+        }
+        flushImmediately()
     }
 
     /// Requests held back while the launch gate was closed.
@@ -45,6 +59,18 @@ extension AppState {
 
     /// Selects the file's tab and puts the caret on the line, as Go to Line does.
     private func goTo(line: Int, column: Int?, inFileAt url: URL) {
+        if let id = bufferID(for: url), let doc = largeFiles[id] {
+            selectTab(id)
+            // The line may not be indexed yet: wait for it, up to 10 s.
+            Task {
+                for _ in 0..<100 where doc.progress.lines < line && !doc.progress.complete {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+                _ = doc.goTo(line: line)
+                refreshLargeStatus()
+            }
+            return
+        }
         guard let id = bufferID(for: url), let store = stores[id] else { return }
         selectTab(id)
         host.activate(store, settings: settings)

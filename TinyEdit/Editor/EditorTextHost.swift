@@ -153,7 +153,11 @@ final class EditorTextHost: NSObject, NSTextViewDelegate {
         textView.refreshInlineCalculation()
     }
 
+    /// Takes focus instead of the text view when it returns true (a large-file tab is up).
+    var focusOverride: (() -> Bool)?
+
     func focus() {
+        if focusOverride?() == true { return }
         guard let window = textView.window else { return }
         window.makeFirstResponder(textView)
     }

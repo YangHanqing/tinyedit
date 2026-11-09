@@ -301,6 +301,11 @@ extension AppState {
 
     /// Copies a tab out without removing it.
     func tabTransfer(_ id: UUID) -> TabTransfer? {
+        if var buffer = session.buffers[id], let doc = largeFiles[id] {
+            // The other window opens the file itself; the edits travel as the snapshot would.
+            buffer.largeFile = LargeFileMeta(topRow: doc.topRow.rounded(.down), follow: doc.follow)
+            return TabTransfer(buffer: buffer, text: doc.snapshotEdits.snapshotText(), viewState: .init(), indentOverride: nil)
+        }
         guard var buffer = session.buffers[id], let store = stores[id] else { return nil }
         if host.activeStore === store { host.captureViewState() }
         buffer.pasteSuggestion = nil
@@ -315,13 +320,18 @@ extension AppState {
     func adoptTab(_ transfer: TabTransfer, before target: UUID?, select: Bool) async -> Bool {
         var buffer = transfer.buffer
         if buffer.fileBookmark != nil { attachRestoredFile(&buffer) }
-        let store = makeStore(for: buffer, text: transfer.text)
-        let length = store.length
-        let location = min(transfer.viewState.selection.location, length)
-        store.viewState = .init(selection: NSRange(location: location,
-                                                   length: min(transfer.viewState.selection.length, length - location)),
-                                scrollFraction: transfer.viewState.scrollFraction)
-        store.indentOverride = transfer.indentOverride
+        if buffer.largeFile != nil {
+            makeLargeFile(for: buffer, edits: LargeFileEdits.fromSnapshot(transfer.text) ?? LargeFileEdits())
+            LargeFileMemory.start()
+        } else {
+            let store = makeStore(for: buffer, text: transfer.text)
+            let length = store.length
+            let location = min(transfer.viewState.selection.location, length)
+            store.viewState = .init(selection: NSRange(location: location,
+                                                       length: min(transfer.viewState.selection.length, length - location)),
+                                    scrollFraction: transfer.viewState.scrollFraction)
+            store.indentOverride = transfer.indentOverride
+        }
         // A tab that left this window earlier and comes back keeps its id: it is no longer deleted here.
         session.tombstones.removeAll { $0 == buffer.id }
         session.buffers[buffer.id] = buffer
@@ -355,6 +365,10 @@ extension AppState {
             dirtyTasks[id]?.cancel()
             unregisterFile(id)
             stores[id]?.invalidate()
+        }
+        for (id, doc) in largeFiles {
+            unregisterFile(id)
+            doc.close()
         }
         for folder in folders { access.stop(folder.scopeURL) }
         for monitor in folderMonitors.values { monitor.unregister() }

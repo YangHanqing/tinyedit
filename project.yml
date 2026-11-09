@@ -18,7 +18,7 @@ settings:
   base:
     # Shared by the app and its Quick Look extension, which must carry the same version.
     # The patch number goes up with each feature.
-    MARKETING_VERSION: "0.6.1"
+    MARKETING_VERSION: "0.7.2"
     # yyyyMMddHHmm. scripts/install.sh stamps the minute it builds.
     CURRENT_PROJECT_VERSION: "202611071507"
     SWIFT_VERSION: "5.0"
@@ -31,9 +31,12 @@ settings:
     ENABLE_HARDENED_RUNTIME: YES
     CODE_SIGN_IDENTITY: "-"
     CODE_SIGN_STYLE: Manual
+    # The Finder menu's link scheme (FinderMenu), in the app's and the Finder extension's Info.plist.
+    TINYEDIT_URL_SCHEME: tinyedit
   configs:
     Debug:
       ONLY_ACTIVE_ARCH: YES
+      TINYEDIT_URL_SCHEME: tinyedit-debug
     Release:
       CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
 targets:
@@ -51,6 +54,7 @@ targets:
             subpath: bin
     dependencies:
       - target: TinyEditQuickLook
+      - target: TinyEditFinder
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cn.hqyang.tinyedit
@@ -104,6 +108,25 @@ targets:
         # An embedded extension's identifier must start with its app's.
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: cn.hqyang.tinyedit.debug.quicklook
+  # Finder's “New Text File with TinyEdit” on a folder's empty space. Off until the user turns it on in System Settings.
+  TinyEditFinder:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: TinyEditFinder
+      - TinyEdit/Utilities/FinderMenu.swift
+      - TinyEdit/Localizable.xcstrings
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cn.hqyang.tinyedit.finder
+        PRODUCT_NAME: TinyEditFinder
+        ENABLE_APP_SANDBOX: YES
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: TinyEditFinder/Info.plist
+        CODE_SIGN_ENTITLEMENTS: TinyEditFinder/TinyEditFinder.entitlements
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: cn.hqyang.tinyedit.debug.finder
   TinyEditTests:
     type: bundle.unit-test
     platform: macOS

@@ -49,21 +49,23 @@ extension AppState {
         Task { await openURLsAsync(urls) }
     }
 
-    func openURLsAsync(_ urls: [URL]) async {
+    /// Files over `LargeFilePolicy.threshold` (or any file, with `.large`) open in the large-file view.
+    func openURLsAsync(_ urls: [URL], mode: OpenMode = .automatic) async {
         guard !closing, !transferring else { return }
-        let requests = urls.filter(CommandLineTool.isRequest)
-        let urls = urls.filter { !CommandLineTool.isRequest($0) }
+        let isRequest = { (url: URL) in CommandLineTool.isRequest(url) || FinderMenu.directory(from: url) != nil }
+        let requests = urls.filter(isRequest)
+        let urls = urls.filter { !isRequest($0) && $0.isFileURL }
         showWindow() // the red button may have hidden it; the tab and any error toast must be seen
         flushImmediately() // a large read or a failed open must not sit inside another buffer's debounce window
         var firstNew: UUID?
         var existing: UUID?
         // A folder window starts with an empty Untitled tab; the first file opened there takes its place.
         let placeholders = isMain ? [] : session.tabOrder.filter { id in
-            session.buffers[id]?.isUntitled == true && session.buffers[id]?.titleIsCustom == false && (stores[id]?.length ?? 1) == 0
+            session.buffers[id]?.isUntitled == true && session.buffers[id]?.titleIsCustom == false
+                && session.buffers[id]?.saveDirectory == nil && (stores[id]?.length ?? 1) == 0
         }
         var opened = 0
         var overLimit = 0
-        var tooLarge: [(url: URL, bytes: Int)] = []
         for url in urls {
             var isDir: ObjCBool = false
             if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
@@ -79,6 +81,14 @@ extension AppState {
             guard hasRoomForTab else { overLimit += 1; continue }
 
             let started = access.start(url)
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+            if mode == .large || (mode == .automatic && size > LargeFilePolicy.threshold) {
+                if let id = await openLargeURL(url, started: started) {
+                    firstNew = firstNew ?? id
+                    opened += 1
+                }
+                continue
+            }
             do {
                 let loaded = try await Task.detached(priority: .userInitiated) { try FileLoader.load(from: url) }.value
                 if let id = bufferID(for: url) { // opened concurrently
@@ -114,9 +124,12 @@ extension AppState {
                 noteRecentDocument(url)
                 firstNew = firstNew ?? b.id
                 opened += 1
-            } catch FileOpenError.fileTooLarge(let bytes) {
-                if started { access.stop(url) }
-                tooLarge.append((url, bytes))
+            } catch FileOpenError.fileTooLarge {
+                // It grew past the editor's limit since it was measured.
+                if let id = await openLargeURL(url, started: started) {
+                    firstNew = firstNew ?? id
+                    opened += 1
+                }
             } catch is FileOpenError {
                 if started { access.stop(url) }
                 showToast(String(localized: "Could not open file"), error: true)
@@ -130,15 +143,28 @@ extension AppState {
         if firstNew != nil {
             for id in placeholders where (stores[id]?.length ?? 1) == 0 { removeBuffer(id, rememberClosed: false, refill: false) }
         }
-        for file in tooLarge {
-            await offerLargeFileHead(file.url, name: file.url.lastPathComponent, bytes: file.bytes)
-        }
         await runCommandLineRequests(requests)
         if overLimit > 0 {
             showToast(opened == 0 ? Self.tabLimitMessage
                       : String(localized: "Opened \(opened) of \(opened + overLimit) files. Tabs are limited to \(EditorSession.maxTabs)."))
         }
         flushImmediately()
+    }
+
+    /// One large-file open inside `openURLsAsync`: the scope `started` is kept by the tab, or stopped on failure.
+    private func openLargeURL(_ url: URL, started: Bool) async -> UUID? {
+        guard !closing, !transferring else {
+            if started { access.stop(url) }
+            return nil
+        }
+        do {
+            return try await openLargeFile(url)   // the tab keeps the scope, as an editor tab does
+        } catch {
+            if started { access.stop(url) }
+            Log.files.error("large open failed: \((error as NSError).domain, privacy: .public) \((error as NSError).code)")
+            showToast(String(localized: "Could not open file"), error: true)
+            return nil
+        }
     }
 
     func bufferID(for url: URL) -> UUID? {
@@ -188,6 +214,8 @@ extension AppState {
         guard !transferring, !closing else { return false }
         guard let b = session.buffers[id] else { return false }
         guard !b.isUntitled, let url = fileURLs[id] else { return await saveAsFlow(id) }
+        // A large-file tab without edits has nothing to write.
+        if let doc = largeFiles[id], !doc.hasEdits, doc.pendingEdits == nil, b.conflict == .none { return true }
         if b.conflict == .external { return await confirmedOverwriteSave(id, url: url) }
         switch await performSave(id: id, url: url, overwrite: false, presenter: monitors[id]) {
         case .saved: return true
@@ -215,23 +243,32 @@ extension AppState {
         }
     }
 
+    /// `replacement` is a Replace All too large for a large-file tab's edits, written into the saved file.
     @discardableResult
-    func saveAsFlow(_ id: UUID) async -> Bool {
+    func saveAsFlow(_ id: UUID, replacement: LargeFileReplacement? = nil) async -> Bool {
         guard !transferring, !closing else { return false }
         guard let b = session.buffers[id] else { return false }
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
         panel.allowsOtherFileTypes = true   // no required file type, no forced .txt
-        panel.nameFieldStringValue = b.isUntitled
+        var name = b.isUntitled
             ? b.displayTitle.replacingOccurrences(of: "…", with: "").replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
             : b.title
-        if let current = fileURLs[id] { panel.directoryURL = current.deletingLastPathComponent() }
+        if let current = fileURLs[id] {
+            panel.directoryURL = current.deletingLastPathComponent()
+        } else if let folder = b.saveDirectory {
+            // Finder's New Text File: that folder, and a name Finder shows as a text file.
+            panel.directoryURL = URL(fileURLWithPath: folder, isDirectory: true)
+            if (name as NSString).pathExtension.isEmpty { name += "." + b.language.preferredExtension }
+        }
+        panel.nameFieldStringValue = name
         guard panel.runModal() == .OK, let url = panel.url else { return false }
 
         let sameFile = fileURLs[id].map { FileAccessManager.key($0) == FileAccessManager.key(url) } ?? false
         let started = access.start(url)
         // The save panel already confirmed replacing an existing file.
-        let outcome = await performSave(id: id, url: url, overwrite: true, presenter: sameFile ? monitors[id] : nil)
+        let outcome = await performSave(id: id, url: url, overwrite: true, presenter: sameFile ? monitors[id] : nil,
+                                        replacement: replacement)
         guard outcome == .saved else {
             if started { access.stop(url) }
             return false
@@ -261,6 +298,7 @@ extension AppState {
         session.buffers[id]?.rememberFileURL(url)
         session.buffers[id]?.title = url.lastPathComponent
         session.buffers[id]?.titleIsCustom = false
+        session.buffers[id]?.saveDirectory = nil
         do {
             let lang = EditorLanguage.detect(fileName: url.lastPathComponent,
                                              text: stores[id].map { String($0.logicalString().prefix(200)) } ?? "")
@@ -279,7 +317,11 @@ extension AppState {
         flushImmediately()
     }
 
-    func performSave(id: UUID, url: URL, overwrite: Bool, presenter: ExternalFileMonitor?) async -> SaveOutcome {
+    func performSave(id: UUID, url: URL, overwrite: Bool, presenter: ExternalFileMonitor?,
+                     replacement: LargeFileReplacement? = nil) async -> SaveOutcome {
+        if largeFiles[id] != nil {
+            return await performLargeSave(id: id, url: url, overwrite: overwrite, presenter: presenter, replacement: replacement)
+        }
         guard let b = session.buffers[id], let store = stores[id] else { return .failed }
         applySaveCleanup(store, language: b.language)
         let text = store.logicalString()
@@ -349,6 +391,17 @@ extension AppState {
             alert.buttons[0].hasDestructiveAction = true
             guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
+        if let doc = largeFiles[id] {
+            doc.discardMismatchedEdits()
+            guard await doc.reload(url, encoding: encoding) else {
+                return showToast(String(localized: "Could not read the file as \(encoding.statusLabel)"), error: true)
+            }
+            session.buffers[id]?.encoding = encoding
+            session.buffers[id]?.conflict = .none
+            session.buffers[id]?.dirty = false
+            flushImmediately()
+            return refreshLargeStatus()
+        }
         guard let store = stores[id] else { return }
         let gen = store.generation
         let result = await Task.detached(priority: .userInitiated) {
@@ -377,7 +430,7 @@ extension AppState {
 
     @discardableResult
     func saveWithAsync(_ id: UUID, encoding: TextEncoding? = nil, lineEnding: LineEnding? = nil) async -> Bool {
-        guard let b = session.buffers[id] else { return false }
+        guard let b = session.buffers[id], b.largeFile == nil else { return false }
         let old = (b.encoding, b.lineEnding)
         let new = (encoding ?? old.0, lineEnding ?? old.1)
         guard new != old else { return true }
@@ -532,8 +585,8 @@ extension AppState {
     func removeBuffer(_ id: UUID, rememberClosed: Bool = true, refill: Bool = true) {
         guard let buffer = session.buffers[id], let index = session.tabOrder.firstIndex(of: id) else { return }
         host.captureViewState()
-        if rememberClosed, let bm = buffer.fileBookmark, let store = stores[id] {
-            let vs = store.viewState
+        if rememberClosed, let bm = buffer.fileBookmark, stores[id] != nil || largeFiles[id] != nil {
+            let vs = stores[id]?.viewState ?? BufferTextStore.ViewState()
             let record = ClosedTabRecord(fileBookmark: bm, fileDisplayName: buffer.fileDisplayName ?? buffer.title,
                                          language: buffer.language, encoding: buffer.encoding, lineEnding: buffer.lineEnding,
                                          cursorLocation: vs.selection.location, selectionLength: vs.selection.length,
@@ -553,6 +606,8 @@ extension AppState {
         curlJobs[id]?.task.cancel(); curlJobs[id] = nil; curlBodies[id] = nil; curlCommands[id] = nil
         curlSources[id] = nil
         stores[id]?.invalidate()
+        largeFiles[id]?.close(); largeFiles[id] = nil
+        largeDiskTasks[id]?.cancel(); largeDiskTasks[id] = nil
         dirtyTasks[id]?.cancel(); dirtyTasks[id] = nil
         unregisterFile(id)
         bookmarkBroken.remove(id)

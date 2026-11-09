@@ -78,6 +78,7 @@ private struct GeneralSettingsPane: View {
                 Text("A new language applies the next time TinyEdit opens.").settingsFootnote()
             }
             CommandLineToolSection()
+            FinderMenuSection()
             Section {
                 LabeledContent("Version") {
                     Text(verbatim: "\(Self.bundleValue("CFBundleShortVersionString")) (\(Self.bundleValue("CFBundleVersion")))")

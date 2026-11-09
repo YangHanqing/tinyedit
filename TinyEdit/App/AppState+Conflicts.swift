@@ -59,6 +59,7 @@ extension AppState {
 
     /// In-session `presentedItemDidChange`, after self-write filtering (hash compare plus save-in-flight wait).
     func handleExternalChange(_ id: UUID) async {
+        if largeFiles[id] != nil { return scheduleLargeFileDiskCheck(id) }
         var waits = 0
         while savingIDs.contains(id), waits < 30 {
             try? await Task.sleep(for: .milliseconds(100))
@@ -112,6 +113,7 @@ extension AppState {
     }
 
     func handleDeleted(_ id: UUID) async {
+        if largeFiles[id] != nil { return scheduleLargeFileDiskCheck(id) }
         // Atomic-replace saves from other tools look like delete+create. Give the new file a moment.
         try? await Task.sleep(for: .milliseconds(300))
         guard let url = fileURLs[id], session.buffers[id] != nil else { return }
@@ -150,10 +152,13 @@ extension AppState {
             Task { _ = await saveAsFlow(id) }
         case .relocate:
             relocate(id)
+        case .copyEdits:
+            copyLargeFileEdits(id)
         }
     }
 
     func reloadFromDisk(_ id: UUID) async {
+        if largeFiles[id] != nil { return await reloadLargeFile(id) }
         guard let url = fileURLs[id], let encoding = session.buffers[id]?.encoding, let store = stores[id] else { return }
         let gen = store.generation
         let result = await Task.detached(priority: .userInitiated) {
@@ -200,6 +205,12 @@ extension AppState {
         session.buffers[id]?.rememberFileURL(url)
         registerFile(id: id, url: url)
         bookmarkBroken.remove(id)
+        if let doc = largeFiles[id] {
+            // Read where it is now; restored edits are checked against it before they apply.
+            doc.ensureOpen(url)
+            flushImmediately()
+            return refreshLargeStatus()
+        }
         Task {
             let loaded = await Task.detached { try? FileLoader.load(from: url) }.value
             // Compare with the acknowledged hash without clearing a stored external conflict.

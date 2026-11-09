@@ -15,6 +15,9 @@ extension AppState {
             snapshot.buffers[id]?.selectionLength = store.viewState.selection.length
             snapshot.buffers[id]?.scrollPosition = store.viewState.scrollFraction
         }
+        for (id, doc) in largeFiles where snapshot.buffers[id] != nil {
+            snapshot.buffers[id]?.largeFile = LargeFileMeta(topRow: doc.topRow.rounded(.down), follow: doc.follow)
+        }
         return SessionFile(session: snapshot)
     }
 
@@ -28,6 +31,10 @@ extension AppState {
         stores.values.compactMap { store in
             guard session.buffers[store.id] != nil, writtenGeneration[store.id] != store.generation else { return nil }
             return FlushItem(id: store.id, generation: store.generation, logicalLF: store.logicalString())
+        } + largeFiles.values.compactMap { doc in
+            // A large-file tab's snapshot is its edits, never the file.
+            guard session.buffers[doc.id] != nil, writtenGeneration[doc.id] != doc.generation else { return nil }
+            return FlushItem(id: doc.id, generation: doc.generation, logicalLF: doc.snapshotEdits.snapshotText())
         }
     }
 
@@ -65,7 +72,7 @@ extension AppState {
     }
 
     func handleOutcome(_ out: FlushOutcome) {
-        for (id, gen) in out.written where stores[id] != nil { writtenGeneration[id] = gen }
+        for (id, gen) in out.written where stores[id] != nil || largeFiles[id] != nil { writtenGeneration[id] = gen }
         if out.ok {
             recoveryFailing = false
             // Recovery works again: the next Quit must flush, not offer the lossy exit from an old refusal.
@@ -177,6 +184,20 @@ extension AppState {
                 buffer.dirty = true
             }
             if !settings.suggestLanguageWhileTyping { buffer.languageSuggestion = nil }
+            if buffer.largeFile != nil {
+                if let edits = LargeFileEdits.fromSnapshot(entry.text) {
+                    makeLargeFile(for: buffer, edits: edits)
+                    LargeFileMemory.start()
+                    session.buffers[buffer.id] = buffer
+                    session.tabOrder.append(buffer.id)
+                    continue
+                }
+                // An unreadable edits snapshot is kept as text, never applied to the file.
+                unregisterFile(buffer.id)
+                recoveredCounter += 1
+                buffer = EditorBuffer(id: entry.id, title: "Recovered \(recoveredCounter)")
+                buffer.dirty = true
+            }
             makeStore(for: buffer, text: entry.text)
             session.buffers[buffer.id] = buffer
             session.tabOrder.append(buffer.id)

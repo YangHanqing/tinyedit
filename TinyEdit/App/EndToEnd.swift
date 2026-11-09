@@ -5,7 +5,8 @@ import AppKit
 /// windows, opened files, moved tabs, a closed window) and quits through the normal Quit path; `--e2e 2`, launched
 /// afterwards, checks what came back. Everything lives in the container's temp folder (`TinyEdit-e2e`), never in
 /// the real session. Results go to `report.txt` and window pictures to PNGs in `out/`. `--e2e 3` is a run of its
-/// own for Compare With (tabs, unsaved text, files on disk, navigation, closing). Debug builds only.
+/// own for Compare With (tabs, unsaved text, files on disk, navigation, closing). `--e2e 4` saves a large file
+/// passed by `open -a … file --args --e2e 4`, which the sandbox grants without its folder. Debug builds only.
 @MainActor
 enum EndToEnd {
     static var phase: Int? {
@@ -24,7 +25,7 @@ enum EndToEnd {
     static func prepare() {
         guard let phase else { return }
         let fm = FileManager.default
-        if phase == 3 {
+        if phase == 3 || phase == 4 {
             try? fm.removeItem(at: base)
             try? fm.createDirectory(at: root, withIntermediateDirectories: true)
         }
@@ -75,6 +76,7 @@ enum EndToEnd {
             switch phase {
             case 1: await phase1()
             case 3: await phaseDiff()
+            case 4: await phaseLargeSave()
             default: await phase2()
             }
             lines.append(failures == 0 ? "ALL PASSED" : "\(failures) FAILED")
@@ -288,6 +290,35 @@ enum EndToEnd {
         if let id = main.session.orderedBuffers.first(where: { main.stores[$0.id]?.logicalString() == "draft from a closed window" })?.id {
             main.removeBuffer(id)
         }
+    }
+
+    // MARK: Phase 4: Saving a large file the sandbox grants alone
+
+    /// Launched with a large file outside the container (`open -a … big.log --args --e2e 4`), so the sandbox
+    /// grants that file and not its folder, as a Finder or `tinyedit` open does. Edits its first and last
+    /// lines and saves; the file on disk must hold the edits and every other byte.
+    private static func phaseLargeSave() async {
+        let main = Workspaces.shared.main
+        check(await wait { main.launchGateOpen && main.window != nil }, "main window up")
+        guard await wait(20, { main.largeFiles.values.contains { $0.progress.complete } }),
+              let (id, doc) = main.largeFiles.first(where: { $0.value.progress.complete }), let url = main.fileURLs[id] else {
+            return check(false, "a large file was opened and read (pass one with open -a)")
+        }
+        note(url.path)
+        let before = (try? Data(contentsOf: url)) ?? Data()
+        check(!before.isEmpty, "the file is readable")
+        let last = doc.baseRows - 1
+        check(doc.replaceRows(0...0, with: "EDITED FIRST", actionName: "e2e"), "first row edited")
+        check(doc.replaceRows(last...last, with: "EDITED LAST", actionName: "e2e"), "last row edited")
+        let saved = await main.saveFlow(id)
+        check(saved, "Save went through")
+        let after = (try? Data(contentsOf: url)) ?? Data()
+        let firstBreak = before.firstIndex(of: 0x0A) ?? before.endIndex
+        // The last row is the empty one after the final line break: the edit's text follows it.
+        let expected = Data("EDITED FIRST".utf8) + before[firstBreak..<before.endIndex] + Data("EDITED LAST".utf8)
+        check(after == expected, "the saved file holds the edits and every other byte (\(after.count) of \(expected.count) bytes)")
+        check(await wait(20) { doc.progress.complete && !doc.hasEdits }, "the tab reads the saved file again")
+        check(main.session.buffers[id]?.dirty == false, "the tab is clean")
     }
 
     // MARK: Phase 3: Compare With

@@ -266,6 +266,7 @@ enum ScreenshotProfile {
                 state.endPasteRecognition()
             }
             if scene == "translation" { state.presentTranslation(wholeDocument: true) }
+            if scene == "large-file" { return await largeFile(window, state: state) }
             if ProcessInfo.processInfo.arguments.contains("--screenshot-export") {
                 if scene == "curl" {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { state.sendPastedCurl() }
@@ -276,6 +277,87 @@ enum ScreenshotProfile {
             }
         }
     }
+    /// A 1 GB server log (written once into the container), filtered by a regular expression.
+    private static func largeFile(_ window: NSWindow, state: AppState) async {
+        let url = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents/TinyEdit-captures/server.log")
+        if ((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) < 1_000_000_000 {
+            await Task.detached { writeLog(to: url, bytes: 1_100_000_000) }.value
+        }
+        guard let id = try? await state.openLargeFile(url), let doc = state.largeFiles[id] else { return }
+        state.selectTab(id)
+        while !doc.progress.complete { try? await Task.sleep(for: .milliseconds(100)) }
+        state.find.regex = true
+        state.find.query = #"ERROR .*timeout"#
+        state.showFind(replace: false)
+        state.setLargeFilter(true)
+        try? await Task.sleep(for: .milliseconds(300))
+        while doc.isFiltering && doc.filterRows == nil || state.find.matchCount == nil {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        if doc.visualRows > 3 {
+            doc.anchor = LargeFilePosition(row: 3, column: 0)
+            doc.head = LargeFilePosition(row: 3, column: 0)
+            state.refreshLargeStatus()
+            state.largeView.refresh()
+        }
+        guard ProcessInfo.processInfo.arguments.contains("--screenshot-export") else { return }
+        try? await Task.sleep(for: .seconds(1.5))
+        export(window, scene: "large-file")
+    }
+
+    /// Log lines from a few services over four days. One template block of lines is built, then written again
+    /// and again with its timestamps moved on, so 1 GB takes seconds even in a Debug build.
+    nonisolated private static func writeLog(to url: URL, bytes: Int) {
+        let services = ["api-gateway", "orders     ", "payments   ", "inventory  ", "auth       ", "search     "]
+        let paths = ["/v1/orders", "/v1/cart", "/v1/products", "/v1/users/me", "/v1/checkout", "/v1/search?q=lamp"]
+        var rng = SystemRandomNumberGenerator()
+        var text = ""
+        var stamps: [Int] = []
+        let linesPerBlock = 8192
+        for i in 0..<linesPerBlock {
+            stamps.append(text.utf8.count)
+            let svc = services[i % services.count]
+            let req = String(UInt32.random(in: 0x100000...0xFFFFFF, using: &rng), radix: 16)
+            let roll = Int.random(in: 0..<1000, using: &rng)
+            let body: String
+            switch roll {
+            case 0..<12:
+                body = "ERROR \(svc) req=\(req) upstream timeout after 5000ms host=pay-\(roll % 4).internal order=\(Int.random(in: 10000...99999, using: &rng))"
+            case 12..<20:
+                body = "ERROR \(svc) req=\(req) insert failed: duplicate key value violates unique constraint \"orders_pkey\""
+            case 20..<70:
+                body = "WARN  \(svc) req=\(req) slow response \(Int.random(in: 1200...4800, using: &rng))ms retry=\(roll % 3 + 1)/3"
+            case 70..<300:
+                body = "DEBUG \(svc) cache hit key=user:\(Int.random(in: 1000...9999, using: &rng)) ttl=300s"
+            default:
+                let path = paths[roll % paths.count]
+                body = "INFO  \(svc) req=\(req) GET \(path) 200 \(Int.random(in: 3...240, using: &rng))ms"
+            }
+            text += "2026-11-06 00:00:00.\(String(format: "%03d", roll)) \(body)\n"
+        }
+        var block = Data(text.utf8)
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        guard let handle = try? FileHandle(forWritingTo: url) else { return }
+        defer { try? handle.close() }
+        let digit = { (n: Int) -> UInt8 in UInt8(48 + n) }
+        var b = 0
+        while b * block.count < bytes {
+            block.withUnsafeMutableBytes { raw in
+                let p = raw.bindMemory(to: UInt8.self)
+                for (i, at) in stamps.enumerated() {
+                    let seconds = (b * linesPerBlock + i) * 4 / 100   // 25 lines a second
+                    let day = 6 + seconds / 86_400, h = seconds / 3600 % 24, m = seconds / 60 % 60, s = seconds % 60
+                    p[at + 8] = digit(day / 10); p[at + 9] = digit(day % 10)
+                    p[at + 11] = digit(h / 10); p[at + 12] = digit(h % 10)
+                    p[at + 14] = digit(m / 10); p[at + 15] = digit(m % 10)
+                    p[at + 17] = digit(s / 10); p[at + 18] = digit(s % 10)
+                }
+            }
+            handle.write(block)
+            b += 1
+        }
+    }
+
     /// Capture our content view, excluding macOS screen-sharing decorations in the title bar.
     private static func export(_ window: NSWindow, scene: String) {
         let directory = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents/TinyEdit-captures", isDirectory: true)

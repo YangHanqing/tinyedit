@@ -29,6 +29,84 @@ final class AppStateIntegrationTests: XCTestCase {
         store.textStorage.replaceCharacters(in: NSRange(location: store.length, length: 0), with: text)
     }
 
+    private func waitUntil(_ condition: () -> Bool) async {
+        for _ in 0..<250 where !condition() { try? await Task.sleep(for: .milliseconds(20)) }
+    }
+
+    /// A large-file tab: edits are only in the session until Save, survive a relaunch (checked against the file
+    /// again before they apply), are streamed into the file on Save, and an append shows up without a reload.
+    func testLargeFileEditsSurviveRelaunchAndSaveWritesThem() async throws {
+        let f = files.appendingPathComponent("app.log")
+        try Data("one\ntwo\nthree\n".utf8).write(to: f)
+        let a = await launch()
+        await a.openURLsAsync([f], mode: .large)
+        let id = try XCTUnwrap(a.session.selectedBufferID)
+        let doc = try XCTUnwrap(a.largeFiles[id])
+        XCTAssertNil(a.stores[id])
+        await waitUntil { doc.progress.complete }
+        XCTAssertTrue(doc.replaceRows(1...1, with: "TWO\n2", actionName: "Edit"))
+        XCTAssertTrue(a.session.buffers[id]!.dirty)
+        XCTAssertEqual(try String(contentsOf: f, encoding: .utf8), "one\ntwo\nthree\n")
+        await a.performFlush()
+
+        let b = await launch()
+        let restored = try XCTUnwrap(b.largeFiles[id])
+        await waitUntil { restored.progress.complete && restored.pendingEdits == nil }
+        XCTAssertEqual(restored.edits.count, 1)
+        XCTAssertEqual((0..<4).compactMap { restored.visibleRow($0)?.text }, ["one", "TWO", "2", "three"])
+        let saved = await b.saveFlow(id)
+        XCTAssertTrue(saved)
+        XCTAssertEqual(try String(contentsOf: f, encoding: .utf8), "one\nTWO\n2\nthree\n")
+        XCTAssertFalse(b.session.buffers[id]!.dirty)
+        await waitUntil { restored.progress.complete }
+
+        let handle = try FileHandle(forWritingTo: f)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("four\n".utf8))
+        try handle.close()
+        await b.largeFileDiskChanged(id)
+        await waitUntil { restored.progress.complete && restored.progress.lines == 6 }
+        XCTAssertEqual(restored.visibleRow(4)?.text, "four")
+        XCTAssertEqual(b.session.buffers[id]?.conflict, ConflictState.none)
+    }
+
+    /// A log written more often than the disk check runs is read on while it is written, never read again from
+    /// scratch, and an open filter and count take in only the new lines, keeping the place in the list.
+    func testGrowingLargeFileIsReadOnWhileWrittenAndKeepsTheFilter() async throws {
+        let f = files.appendingPathComponent("live.log")
+        try Data((0..<2000).map { $0 % 10 == 0 ? "ERROR \($0)\n" : "INFO \($0)\n" }.joined().utf8).write(to: f)
+        let a = await launch()
+        await a.openURLsAsync([f], mode: .large)
+        let id = try XCTUnwrap(a.session.selectedBufferID)
+        let doc = try XCTUnwrap(a.largeFiles[id])
+        await waitUntil { doc.progress.complete }
+        doc.highlightsMatches = true
+        doc.setQuery("ERROR", caseSensitive: true, regex: false)
+        doc.setFilter(true)
+        await waitUntil { doc.filterRows?.count == 200 && a.find.matchCount == 200 }
+        XCTAssertEqual(a.find.matchCount, 200)
+        doc.anchor = LargeFilePosition(row: 5, column: 0)
+        doc.head = doc.anchor
+        let index = doc.index
+
+        let handle = try FileHandle(forWritingTo: f)
+        var readWhileWriting = false
+        for i in 0..<30 {   // every 50 ms, more often than the 300 ms check
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data("ERROR live \(i)\n".utf8))
+            try await Task.sleep(for: .milliseconds(50))
+            if i > 15, doc.progress.lines > 2001 { readWhileWriting = true }
+        }
+        try handle.close()
+        XCTAssertTrue(readWhileWriting)
+        await waitUntil { doc.progress.complete && doc.filterRows?.count == 230 && a.find.matchCount == 230 }
+        XCTAssertEqual(doc.filterRows?.count, 230)
+        XCTAssertEqual(a.find.matchCount, 230)
+        XCTAssertTrue(doc.index === index, "read on from the old end, not from scratch")
+        XCTAssertEqual(doc.anchor?.row, 5)
+        XCTAssertEqual(a.session.buffers[id]?.conflict, ConflictState.none)
+    }
+
     func testFreshLaunchHasOneUntitledAndGateOpen() async {
         let s = await launch()
         XCTAssertTrue(s.launchGateOpen)
@@ -49,6 +127,25 @@ final class AppStateIntegrationTests: XCTestCase {
         XCTAssertEqual(b.stores[order[0]]?.logicalString(), "one")
         XCTAssertEqual(b.stores[order[4]]?.logicalString(), "text 5")
         XCTAssertTrue(b.session.buffers[order[0]]!.dirty)
+    }
+
+    /// Finder's New Text File: the launch's empty tab takes the first folder, a second link adds a tab, the folder
+    /// survives relaunch, and a link that is not exactly ours opens nothing.
+    func testFinderNewTextFileLinkOpensATabThatSavesThere() async throws {
+        let scheme = try XCTUnwrap(FinderMenu.scheme)
+        let a = await launch()
+        let first = try XCTUnwrap(FinderMenu.link(directory: files, scheme: scheme))
+        await a.openURLsAsync([first])
+        XCTAssertEqual(a.session.orderedBuffers.map(\.saveDirectory), [files.standardizedFileURL.path])
+        type("draft", into: a)
+        await a.openURLsAsync([first, URL(string: "\(scheme)://new-text-file?dir=relative")!,
+                               URL(string: "other://new-text-file?dir=/tmp")!])
+        XCTAssertEqual(a.session.tabOrder.count, 2)
+        await a.performFlush()
+
+        let b = await launch()
+        XCTAssertEqual(b.session.orderedBuffers.map(\.saveDirectory), [files.standardizedFileURL.path, files.standardizedFileURL.path])
+        XCTAssertEqual(b.stores[b.session.tabOrder[0]]?.logicalString(), "draft")
     }
 
     func testDirtyFileSurvivesRelaunchAndDiskIsUntouched() async throws {

@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | **English**
 
-TinyEdit is a **native macOS text editor** for everyday reading and editing of TXT, Markdown, JSON and other text files.
+TinyEdit is a **native macOS text editor** for everyday reading and editing of TXT, Markdown, JSON and other text files, and it opens multi-gigabyte logs in an instant.
 
 Open a file to edit it, or start typing without creating a file first. Tabs and unsaved text are kept automatically, ready for the next launch. Built-in tools cover JSON, text recognition from images, arithmetic and translation, with a sidebar for browsing local folders.
 
@@ -18,12 +18,14 @@ Screenshots use the English interface and dark theme. Both language and appearan
 
 | Feature | Description | Image |
 | --- | --- | --- |
-| Everyday editing | Tabs (pin the ones you keep, close every unmodified tab at once, Save All with ⌥⌘S), find and replace, word wrap, line numbers, indent guides, matching brackets and selected-word highlighting. Duplicate, move, delete and join lines, or toggle comments. |  |
+| Everyday editing | Tabs (pin the ones you keep, close every unmodified tab at once, Save All with ⌥⌘S), find and replace (with regular expressions), word wrap, line numbers, indent guides, matching brackets and selected-word highlighting. Duplicate, move, delete and join lines, or toggle comments. |  |
 | Syntax highlighting | 36 languages and formats, including JSON, Markdown, Python, JavaScript, TypeScript, Swift, SQL and YAML, with automatic detection and manual selection. | <img src="assets/screenshots/syntax-highlighting.png" alt="Syntax highlighting" width="560"> |
+| Large files | Open multi-gigabyte logs and data exports directly: text appears at once, scrolling stays smooth, and memory use does not grow with the file. Jump to any line, search the whole file (regular expressions too), or show only the matching lines and double-click one to see it in place. Follow a log that is still being written, like `tail -f`. To change a few lines, select them and press Return; the file changes only when you save.<br><br>Measured on a 1 GB log of 11 million lines: text shows 0.04 s after opening, the whole file is read in under a second, a full search takes about a second, and memory stays around 20 MB. | <img src="assets/screenshots/large-file.png" alt="Showing only the lines of a 1 GB log that match a regular expression" width="560"> |
 | Session recovery | Tabs, unsaved text, cursor and scroll position are kept automatically. Recovery data is separate from your files; files change only when you save them. |  |
 | Files and encodings | UTF-8, UTF-16 and GB18030 (including GBK / GB2312), with line endings preserved. External file changes and deletions prompt you to choose what to do; reloaded changes are marked beside the line numbers. |  |
 | Folders and windows | Folders open in separate windows, with a sidebar that updates as files change on disk. Drag tabs out to create windows or move them between windows. Each window's tabs, folders and position are restored at the next launch. |  |
-| Finder preview | Select a file in Finder and press Space to preview rendered Markdown or highlighted JSON and code. Single-line JSON is formatted automatically. Markdown images appear as alt text. |  |
+| Finder preview | Select a file in Finder and press Space to preview rendered Markdown or highlighted JSON and code. Single-line JSON is formatted automatically. Markdown images appear as alt text. A large file previews its beginning, at once. |  |
+| New file from Finder | Right-click empty space in a Finder window and choose New Text File with TinyEdit: a new tab opens, and saving it puts the file in that folder. Turn it on first from Settings ▸ General ▸ Finder Menu, which opens the system setting. |  |
 | Appearance and languages | Light, dark or system appearance, multiple app icons and editor backgrounds, and eight interface languages, including English, Simplified and Traditional Chinese, and Japanese. |  |
 
 ### Text tools
@@ -77,7 +79,7 @@ Download the latest version from [Releases](../../releases) (or from the [introd
 
 - macOS 14 or later, on Apple silicon or Intel Mac.
 - Apple Translation requires macOS 15; table recognition in images requires macOS 26.
-- Files up to 64 MB. Above 2 MB, only visible text is highlighted; above 5 MB, highlighting and Markdown preview are disabled.
+- No file size limit: files up to 16 MB open in the editor (above 2 MB only visible text is highlighted; above 5 MB highlighting and Markdown preview are off), larger ones in the large-file view.
 
 ## Privacy and network access
 

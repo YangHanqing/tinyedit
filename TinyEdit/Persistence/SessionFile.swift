@@ -8,6 +8,7 @@ struct BufferMetadata: Codable, Equatable, Sendable {
     var fileBookmark: Data?
     var fileDisplayName: String?
     var directoryPath: String?       // absent in manifests written before the title-bar path
+    var saveDirectory: String?       // absent before Finder's New Text File
     var recoveryFile: String
     var language: String
     var languageSuggestion: EditorLanguage?
@@ -25,6 +26,11 @@ struct BufferMetadata: Codable, Equatable, Sendable {
     var diskModificationDate: Date?
     var diskFileSize: Int?
     var conflict: String
+    /// A large-file tab. Its `language` is written as `largeFile`, which builds before 0.7 do not know: they adopt
+    /// the snapshot (edits as JSON) as "Recovered N" instead of putting it over the file on a Save.
+    var largeFile: LargeFileMeta?
+
+    static let largeFileLanguage = "largeFile"
 
     init(_ b: EditorBuffer) {
         id = b.id
@@ -34,8 +40,10 @@ struct BufferMetadata: Codable, Equatable, Sendable {
         fileBookmark = b.fileBookmark
         fileDisplayName = b.fileDisplayName
         directoryPath = b.directoryPath
+        saveDirectory = b.saveDirectory
         recoveryFile = b.recoveryFile
-        language = b.language.rawValue
+        language = b.largeFile != nil ? Self.largeFileLanguage : b.language.rawValue
+        largeFile = b.largeFile
         languageSuggestion = b.languageSuggestion
         languageDetectionSuppressed = b.languageDetectionSuppressed
         encoding = b.encoding.rawValue
@@ -56,7 +64,7 @@ struct BufferMetadata: Codable, Equatable, Sendable {
     /// Nil when any enum string is unknown. The caller then adopts the snapshot as `Recovered N`
     /// instead of dropping the bytes.
     func makeBuffer() -> EditorBuffer? {
-        guard let language = EditorLanguage(rawValue: language),
+        guard let language = largeFile != nil && language == Self.largeFileLanguage ? .plain : EditorLanguage(rawValue: language),
               let encoding = TextEncoding(rawValue: encoding),
               let lineEnding = LineEnding(rawValue: lineEnding),
               let conflict = ConflictState(rawValue: conflict) else { return nil }
@@ -66,6 +74,7 @@ struct BufferMetadata: Codable, Equatable, Sendable {
         b.fileBookmark = fileBookmark
         b.fileDisplayName = fileDisplayName
         b.directoryPath = directoryPath
+        b.saveDirectory = saveDirectory
         b.language = language
         b.languageSuggestion = languageSuggestion
         b.languageDetectionSuppressed = languageDetectionSuppressed ?? (language != .plain)
@@ -81,6 +90,7 @@ struct BufferMetadata: Codable, Equatable, Sendable {
         b.diskModificationDate = diskModificationDate
         b.diskFileSize = diskFileSize
         b.conflict = conflict
+        b.largeFile = largeFile
         return b
     }
 }

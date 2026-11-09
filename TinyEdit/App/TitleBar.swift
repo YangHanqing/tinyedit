@@ -44,9 +44,10 @@ struct TitleBar: View {
     }
 
     /// Icon and file name, then the parent directory in a weaker color. The directory gives up width
-    /// first and truncates in the middle; Untitled shows the app name and no path.
+    /// first and truncates in the middle; Untitled shows the app name, and the folder it will be saved in when
+    /// Finder's New Text File made it.
     @ViewBuilder private func title(_ buffer: EditorBuffer?) -> some View {
-        let directory = buffer?.directoryPath
+        let directory = buffer.flatMap { $0.isUntitled ? $0.saveDirectory : $0.directoryPath }
         let name = buffer.flatMap { $0.isUntitled ? nil : ($0.fileDisplayName ?? $0.title) } ?? "TinyEdit"
         HStack(spacing: 6) {
             Image(nsImage: NSImage(named: appState.settings.appIcon.imageName) ?? NSApp.applicationIconImage)
@@ -57,7 +58,7 @@ struct TitleBar: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.textPrimary)
                 .layoutPriority(1)
-            if let directory, buffer?.isUntitled == false {
+            if let directory {
                 Text(TitlePathFormatting.abbreviate(directory: directory, home: TitlePathFormatting.userHome))
                     .font(.system(size: 12))
                     .foregroundStyle(Color.textSecondary)
@@ -65,7 +66,7 @@ struct TitleBar: View {
             }
         }
         .lineLimit(1)
-        .toolTip(directory.map { TitlePathFormatting.filePath(directory: $0, filename: name) } ?? "")
+        .toolTip(directory.map { buffer?.isUntitled == true ? $0 : TitlePathFormatting.filePath(directory: $0, filename: name) } ?? "")
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }

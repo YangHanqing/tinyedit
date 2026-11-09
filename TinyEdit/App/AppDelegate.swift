@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         EndToEnd.run()
         #endif
         UpdateChecker.scheduleLaunchCheck()
+        Task.detached(priority: .background) { LargeFileWriter.removeLeftovers() }
         // ⌘T opens a tab like ⌘N (New Window is ⇧⌘N). SwiftUI menus cannot hold a hidden second shortcut.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -93,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     func applicationWillResignActive(_ notification: Notification) {
         Workspaces.shared.flushAll()
+        for window in Workspaces.shared.all { window.scheduleLargeFileTrim() }
     }
 
     /// The main window's scene phase covers it; the other windows are checked here.

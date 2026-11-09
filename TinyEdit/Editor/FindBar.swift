@@ -8,7 +8,7 @@ struct FindBar: View {
     @FocusState private var focus: Field?
     private enum Field { case query, replacement }
 
-    private static let fieldWidth: CGFloat = 220
+    private static let fieldWidth: CGFloat = 244
     private static let toggleWidth: CGFloat = 20
 
     var body: some View {
@@ -27,7 +27,7 @@ struct FindBar: View {
 
     private func card(_ find: FindModel) -> some View {
         @Bindable var find = find
-        let noMatches = find.matchCount == 0
+        let noMatches = find.matchCount == 0 || find.invalidPattern
         let canStep = (find.matchCount ?? 0) > 0
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
@@ -45,7 +45,8 @@ struct FindBar: View {
                         .textFieldStyle(.plain)
                         .focused($focus, equals: .query)
                         .onSubmit { appState.findNext() }
-                    CaseToggle(isOn: $find.caseSensitive)
+                    OptionToggle(label: "Aa", help: String(localized: "Case sensitive"), isOn: $find.caseSensitive)
+                    OptionToggle(label: ".*", help: String(localized: "Regular expression"), isOn: $find.regex)
                 }
                 .frame(width: Self.fieldWidth)
                 counter(find)
@@ -54,6 +55,13 @@ struct FindBar: View {
                     .disabled(!canStep)
                 IconButton(systemName: "arrow.down", help: String(localized: "Find Next")) { appState.findNext() }
                     .disabled(!canStep)
+                if appState.largeStatus != nil {
+                    IconButton(systemName: find.filterLines ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle",
+                               help: find.filterLines ? String(localized: "Show All Lines") : String(localized: "Show Only Matching Lines")) {
+                        appState.setLargeFilter(!find.filterLines)
+                    }
+                    .disabled(find.query.isEmpty)
+                }
                 CloseButton(label: String(localized: "Close")) { appState.hideFind() }
             }
             if find.showReplace {
@@ -77,13 +85,16 @@ struct FindBar: View {
         .background(shortcuts)
         .onChange(of: find.query) { _, _ in appState.findQueryChanged() }
         .onChange(of: find.caseSensitive) { _, _ in appState.findQueryChanged() }
+        .onChange(of: find.regex) { _, _ in appState.findQueryChanged() }
         .onChange(of: find.focusToken) { _, _ in focus = find.focusReplace ? .replacement : .query }
         .onAppear { focus = find.focusReplace ? .replacement : .query }
     }
 
     @ViewBuilder private func counter(_ find: FindModel) -> some View {
         Group {
-            if let count = find.matchCount {
+            if find.invalidPattern {
+                Text("Invalid pattern").foregroundStyle(Color.error)
+            } else if let count = find.matchCount {
                 if count == 0 {
                     Text("No matches").foregroundStyle(Color.error)
                 } else {
@@ -131,14 +142,16 @@ struct FieldBox<Content: View>: View {
     }
 }
 
-/// "Aa" inside the find field: accent-filled while on.
-private struct CaseToggle: View {
+/// "Aa" (case) and ".*" (regular expression) inside the find field: accent-filled while on.
+private struct OptionToggle: View {
+    let label: String
+    let help: String
     @Binding var isOn: Bool
     @State private var hovering = false
 
     var body: some View {
         Button { isOn.toggle() } label: {
-            Text(verbatim: "Aa")
+            Text(verbatim: label)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(isOn ? Color.onAccent : hovering ? Color.textPrimary : Color.textTertiary)
                 .frame(width: 24, height: 20)
@@ -148,8 +161,8 @@ private struct CaseToggle: View {
         }
         .buttonStyle(PressedOpacityStyle())
         .onHover { hovering = $0 }
-        .toolTip(String(localized: "Case sensitive"))
-        .accessibilityLabel(String(localized: "Case sensitive"))
+        .toolTip(help)
+        .accessibilityLabel(help)
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }

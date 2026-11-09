@@ -12,6 +12,7 @@ enum ConflictAction: Equatable {
     case keepMyVersion    // also Keep Recovered Version
     case saveAs
     case relocate         // in-session rebind only
+    case copyEdits        // a large-file tab whose edits no longer fit the file
 }
 
 /// The tab context menu's batch closes, relative to the tab that was right-clicked.
@@ -86,6 +87,10 @@ final class FindModel {
     var query = ""
     var replacement = ""
     var caseSensitive = false
+    /// The query is a regular expression (ICU syntax; `^`/`$` at line breaks).
+    var regex = false
+    /// `regex` is on and the query does not compile.
+    var invalidPattern = false
     /// Matches in the active buffer; nil while the query is empty or not yet searched.
     var matchCount: Int?
     /// 1-based position of the match the selection is on.
@@ -94,4 +99,6 @@ final class FindModel {
     var capped = false
     var focusToken = 0
     var focusReplace = false
+    /// Large-file tabs: show only the lines that match.
+    var filterLines = false
 }

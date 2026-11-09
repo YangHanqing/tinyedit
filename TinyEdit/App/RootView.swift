@@ -44,6 +44,9 @@ struct RootView: View {
         .sheet(item: Bindable(appState).translationInput) { input in
             TranslationView(input: input).environment(appState)
         }
+        .sheet(item: Bindable(appState).largeLineEdit) { request in
+            LargeFileLineEditor(request: request).environment(appState)
+        }
         .onDrop(of: [.fileURL, TabDrag.type], isTargeted: nil) { providers in
             if providers.contains(where: { $0.hasItemConformingToTypeIdentifier(TabDrag.type.identifier) }) {
                 // A tab from another window, dropped anywhere but a tab bar, joins this window last.
@@ -73,9 +76,15 @@ struct RootView: View {
     private var editorSlot: some View {
         HSplitView {
             EditorView(host: appState.host,
-                       store: appState.activeStore,
+                       store: appState.editorHostStore,
                        allStores: appState.allStores,
                        settings: appState.settings)
+                // A large-file tab covers the text view, which stays (holding an empty buffer) so it is never rebuilt.
+                .overlay {
+                    if appState.selectedBuffer?.largeFile != nil {
+                        LargeFileView(view: appState.largeView, document: appState.activeLargeFile, settings: appState.settings)
+                    }
+                }
                 .overlay(alignment: .topTrailing) {
                     VStack(alignment: .trailing, spacing: 0) {
                         FindBar()

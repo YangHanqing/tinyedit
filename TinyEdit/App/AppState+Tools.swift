@@ -4,6 +4,9 @@ extension AppState {
     // MARK: Command palette
 
     func togglePalette() {
+        if !paletteVisible, activeLargeFile != nil {
+            return showToast(String(localized: "Text tools work in the editor. Select lines and choose Open in New Tab."))
+        }
         if paletteVisible { hidePalette() } else { showPalette() }
     }
 
@@ -270,10 +273,10 @@ extension AppState {
         togglePreview()
     }
 
-    /// Keeps the hidden text view out of the key chain while the preview covers it; called on every change
-    /// of `previewFull` (tab switch, toggle, layout, settings).
+    /// Keeps the hidden text view out of the key chain while Preview Only or a large-file tab covers it; called on
+    /// every change of `previewFull` (tab switch, toggle, layout, settings) and of the visible tab.
     func applyPreviewConcealment() {
-        let full = previewFull
+        let full = previewFull || selectedBuffer?.largeFile != nil
         guard host.textView.isConcealed != full else { return }
         host.textView.isConcealed = full
         if full {

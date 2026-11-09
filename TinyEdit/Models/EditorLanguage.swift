@@ -53,24 +53,30 @@ enum EditorLanguage: String, Codable, CaseIterable, Sendable {
     static let menuOrder: [EditorLanguage] =
         [.plain] + allCases.filter { $0 != .plain }.sorted { $0.statusLabel.localizedCaseInsensitiveCompare($1.statusLabel) == .orderedAscending }
 
+    /// The extension a new file in this language is named with: its first listed one, else `txt`.
+    var preferredExtension: String {
+        Self.extensionTable.first { $0.0 == self }?.1.split(separator: " ").first.map(String.init) ?? "txt"
+    }
+
+    private static let extensionTable: [(EditorLanguage, String)] = [
+        (.markdown, "md markdown mdown mkd"),
+        (.json, "json jsonc json5 geojson webmanifest jsonl ndjson har ipynb xcstrings code-workspace"),
+        (.python, "py pyw pyi"), (.javascript, "js mjs cjs jsx"), (.typescript, "ts tsx mts cts"),
+        (.java, "java"), (.kotlin, "kt kts"), (.swift, "swift"), (.go, "go"), (.rust, "rs"),
+        (.c, "c h"), (.cpp, "cpp cc cxx c++ hpp hh hxx h++ mm ino"), (.csharp, "cs csx"),
+        (.php, "php phtml"), (.ruby, "rb rake gemspec ru"), (.perl, "pl pm t"), (.lua, "lua"),
+        (.shell, "sh bash zsh ksh fish command"), (.powershell, "ps1 psm1 psd1"), (.sql, "sql"),
+        (.html, "html htm xhtml vue svelte"),
+        (.xml, "xml xsd xsl xslt plist svg xaml csproj storyboard xib entitlements xcscheme xcworkspacedata"),
+        (.css, "css"), (.scss, "scss sass less"), (.yaml, "yaml yml"), (.toml, "toml"),
+        (.ini, "ini cfg conf properties env editorconfig gitconfig"), (.makefile, "mk mak"),
+        (.diff, "diff patch"), (.r, "r rmd"), (.dart, "dart"), (.scala, "scala sc"),
+        (.groovy, "groovy gradle"), (.haskell, "hs lhs"), (.latex, "tex sty cls bib"),
+    ]
+
     private static let byExtension: [String: EditorLanguage] = {
-        let table: [(EditorLanguage, String)] = [
-            (.markdown, "md markdown mdown mkd"),
-            (.json, "json jsonc json5 geojson webmanifest jsonl ndjson har ipynb xcstrings code-workspace"),
-            (.python, "py pyw pyi"), (.javascript, "js mjs cjs jsx"), (.typescript, "ts tsx mts cts"),
-            (.java, "java"), (.kotlin, "kt kts"), (.swift, "swift"), (.go, "go"), (.rust, "rs"),
-            (.c, "c h"), (.cpp, "cpp cc cxx c++ hpp hh hxx h++ mm ino"), (.csharp, "cs csx"),
-            (.php, "php phtml"), (.ruby, "rb rake gemspec ru"), (.perl, "pl pm t"), (.lua, "lua"),
-            (.shell, "sh bash zsh ksh fish command"), (.powershell, "ps1 psm1 psd1"), (.sql, "sql"),
-            (.html, "html htm xhtml vue svelte"),
-            (.xml, "xml xsd xsl xslt plist svg xaml csproj storyboard xib entitlements xcscheme xcworkspacedata"),
-            (.css, "css"), (.scss, "scss sass less"), (.yaml, "yaml yml"), (.toml, "toml"),
-            (.ini, "ini cfg conf properties env editorconfig gitconfig"), (.makefile, "mk mak"),
-            (.diff, "diff patch"), (.r, "r rmd"), (.dart, "dart"), (.scala, "scala sc"),
-            (.groovy, "groovy gradle"), (.haskell, "hs lhs"), (.latex, "tex sty cls bib"),
-        ]
         var map: [String: EditorLanguage] = [:]
-        for (lang, exts) in table { for e in exts.split(separator: " ") { map[String(e)] = lang } }
+        for (lang, exts) in extensionTable { for e in exts.split(separator: " ") { map[String(e)] = lang } }
         return map
     }()
 

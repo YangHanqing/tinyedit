@@ -16,6 +16,9 @@ struct EditorBuffer: Identifiable, Equatable, Sendable {
     /// relocate, restore). Nil for Untitled. Optional in the session manifest. Render never
     /// resolves the bookmark; a missing file keeps the last value.
     var directoryPath: String?
+    /// An Untitled tab made by Finder's New Text File: the folder its first Save panel starts in, with a name
+    /// that has an extension. Cleared once the tab is saved. Optional in the session manifest.
+    var saveDirectory: String?
     var language: EditorLanguage = .plain
     var languageSuggestion: EditorLanguage?
     var languageDetectionSuppressed = false
@@ -37,6 +40,8 @@ struct EditorBuffer: Identifiable, Equatable, Sendable {
     var diskContentHash: String?       // last acknowledged raw on-disk bytes
     var diskModificationDate: Date?
     var diskFileSize: Int?
+    /// Set for a tab shown in the large-file view: no text store, the file read in place, edits in its snapshot.
+    var largeFile: LargeFileMeta?
     var conflict: ConflictState = .none {
         didSet { if conflict != .external { externalChange = nil } }
     }

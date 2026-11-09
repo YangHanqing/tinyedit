@@ -21,6 +21,7 @@ struct AppCommands: Commands {
                 .keyboardShortcut(AppShortcut.open)
             Button("Open Folder…") { workspaces.beginOpenFolderPanel() }
                 .keyboardShortcut(AppShortcut.openFolder)
+            Button("Open as Large File…") { appState.beginOpenAsLargeFilePanel() }
             Menu("Open Recent") {
                 ForEach(appState.recentURLs, id: \.self) { url in
                     Button(url.lastPathComponent) { appState.openURLs([url]) }
@@ -72,6 +73,7 @@ struct AppCommands: Commands {
                 .keyboardShortcut(AppShortcut.goToLine)
             Button("Go to Matching Bracket") { appState.goToMatchingBracket() }
                 .keyboardShortcut(AppShortcut.goToMatchingBracket)
+                .disabled(appState.editorCommandsDisabled)
             Divider()
             Menu("Line") {
                 Button("Duplicate Line") { appState.runLineCommand(.duplicate) }
@@ -85,10 +87,13 @@ struct AppCommands: Commands {
                 Button("Join Lines") { appState.runLineCommand(.join) }
                     .keyboardShortcut(AppShortcut.joinLines)
             }
+            .disabled(appState.editorCommandsDisabled)
             Button("Toggle Comment") { appState.runLineCommand(.toggleComment) }
                 .keyboardShortcut(AppShortcut.toggleComment)
+                .disabled(appState.editorCommandsDisabled)
             Button("Toggle Task") { appState.runLineCommand(.toggleTask) }
                 .keyboardShortcut(AppShortcut.toggleTask)
+                .disabled(appState.editorCommandsDisabled)
         }
         CommandGroup(after: .toolbar) {
             Button(workspaces.active.sidebarVisible ? LocalizedStringKey("Hide Sidebar") : LocalizedStringKey("Show Sidebar")) { appState.toggleSidebar() }
@@ -131,19 +136,22 @@ struct AppCommands: Commands {
             Button("Command Palette…") { appState.togglePalette() }
                 .keyboardShortcut(AppShortcut.commandPalette)
             Divider()
-            Button("Translate Selection…") { appState.presentTranslation() }
-            Button("Translate Document…") { appState.presentTranslation(wholeDocument: true) }
-            Divider()
-            Button("Send curl Request") { appState.sendCurlAtCursor() }
-            Divider()
-            ForEach(TextToolGroup.allCases, id: \.self) { group in
-                Menu(group.title) {
-                    ForEach(group.tools) { tool in
-                        if tool.startsSubsection { Divider() }
-                        Button(tool.title) { appState.run(tool) }
+            Group {
+                Button("Translate Selection…") { appState.presentTranslation() }
+                Button("Translate Document…") { appState.presentTranslation(wholeDocument: true) }
+                Divider()
+                Button("Send curl Request") { appState.sendCurlAtCursor() }
+                Divider()
+                ForEach(TextToolGroup.allCases, id: \.self) { group in
+                    Menu(group.title) {
+                        ForEach(group.tools) { tool in
+                            if tool.startsSubsection { Divider() }
+                            Button(tool.title) { appState.run(tool) }
+                        }
                     }
                 }
             }
+            .disabled(appState.editorCommandsDisabled)
         }
     }
 }

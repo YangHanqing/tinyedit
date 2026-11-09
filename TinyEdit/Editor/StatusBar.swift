@@ -4,8 +4,16 @@ struct StatusBar: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
+        if let large = appState.largeStatus {
+            LargeFileStatusBar(status: large)
+        } else {
+            editorBar
+        }
+    }
+
+    private var editorBar: some View {
         let s = appState.status
-        HStack(spacing: 16) {
+        return HStack(spacing: 16) {
             if let line = s.line {
                 Text("Ln \(line), Col \(s.column)")
             } else {

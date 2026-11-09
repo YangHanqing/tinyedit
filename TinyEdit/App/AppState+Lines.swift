@@ -65,6 +65,7 @@ extension AppState {
 
     /// Lines in the active buffer, from the line index when it is current.
     var activeLineCount: Int {
+        if let doc = activeLargeFile { return max(doc.progress.lines, 1) }
         guard let store = activeStore else { return 1 }
         if let index = store.lineIndex, index.generation == store.generation { return index.lineCount }
         return store.textStorage.mutableString.components(separatedBy: "\n").count
@@ -74,6 +75,10 @@ extension AppState {
     /// the view. False when the input is not a line number.
     @discardableResult
     func goToLine(_ input: String) -> Bool {
+        if let doc = activeLargeFile {
+            guard let target = LineEditing.parseLineTarget(input) else { return false }
+            return doc.goTo(line: target.line)
+        }
         guard let target = LineEditing.parseLineTarget(input), let store = activeStore else { return false }
         let caret = caretOffset(line: target.line, column: target.column, in: store)
         host.textView.setSelectedRange(NSRange(location: caret, length: 0))

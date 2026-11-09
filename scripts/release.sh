@@ -87,11 +87,13 @@ xcodebuild -project TinyEdit.xcodeproj -scheme TinyEdit -configuration Release -
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" build >build/release-build.log 2>&1 || {
   tail -30 build/release-build.log; fail "build failed (build/release-build.log)"; }
 APP=build/release/Build/Products/Release/TinyEdit.app
-# Xcode signs ad hoc; the extension is signed before the app that contains it.
+# Xcode signs ad hoc; the extensions are signed before the app that contains them.
 sign --options runtime --entitlements TinyEditQuickLook/TinyEditQuickLook.entitlements "$APP/Contents/PlugIns/TinyEditQuickLook.appex"
+sign --options runtime --entitlements TinyEditFinder/TinyEditFinder.entitlements "$APP/Contents/PlugIns/TinyEditFinder.appex"
 sign --options runtime --entitlements TinyEdit/TinyEdit.entitlements "$APP"
 codesign --verify --deep --strict "$APP"
-for binary in "$APP/Contents/MacOS/TinyEdit" "$APP/Contents/PlugIns/TinyEditQuickLook.appex/Contents/MacOS/TinyEditQuickLook"; do
+for binary in "$APP/Contents/MacOS/TinyEdit" "$APP/Contents/PlugIns/TinyEditQuickLook.appex/Contents/MacOS/TinyEditQuickLook" \
+              "$APP/Contents/PlugIns/TinyEditFinder.appex/Contents/MacOS/TinyEditFinder"; do
   [ "$(lipo -archs "$binary" | tr " " "\n" | sort | xargs)" = "arm64 x86_64" ] || fail "$binary is not universal (arm64 + x86_64)"
 done
 [ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "$VERSION" ] || fail "Info.plist version is not $VERSION"

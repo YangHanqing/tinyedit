@@ -73,10 +73,23 @@ final class AppState {
     var folders: [WorkspaceFolder] = []
     var sidebarVisible: Bool
     var sidebarWidth: Double = WorkspaceFile.defaultSidebarWidth
+    /// The visible large-file tab's status bar; nil for an editor tab.
+    var largeStatus: LargeFileStatus?
+    /// Edit Lines: the sheet's text and the rows it replaces.
+    var largeLineEdit: LargeFileLineEditRequest?
 
     // MARK: Not observed
     /// Retains every BufferTextStore until its buffer leaves the session.
     @ObservationIgnored var stores: [UUID: BufferTextStore] = [:]
+    /// Large-file tabs have a document here instead of a store.
+    @ObservationIgnored var largeFiles: [UUID: LargeFileDocument] = [:]
+    /// The one large-file view of this window, shown over the editor while such a tab is selected.
+    @ObservationIgnored let largeView = LargeFileTextView()
+    /// What the text host holds while a large-file tab is selected (`editorHostStore`).
+    @ObservationIgnored var blankStore: BufferTextStore?
+    @ObservationIgnored var largeDiskTasks: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored var largeTrimTask: Task<Void, Never>?
+    @ObservationIgnored var lastReadOnlyHint = Date.distantPast
     @ObservationIgnored let host = EditorTextHost()
     @ObservationIgnored let access = FileAccessManager()
     @ObservationIgnored let root: URL
@@ -187,6 +200,8 @@ final class AppState {
             return InlineCalculator.Context(mode: self.settings.inlineCalculation,
                                             language: self.selectedBuffer?.language ?? .plain)
         }
+        largeView.delegate = self
+        host.focusOverride = { [weak self] in self?.focusLargeView() ?? false }
         fileTree.onRootChanged = { [weak self] in self?.refreshFolderLocations() }
         fileTree.onExpandedChanged = { [weak self] in self?.saveWorkspace() }
         if autoRestore { restoreTask = Task { await self.restore() } }
@@ -200,6 +215,7 @@ final class AppState {
 
     var banner: BannerModel? {
         guard let b = selectedBuffer else { return nil }
+        if largeFiles[b.id] != nil, !bookmarkBroken.contains(b.id) { return largeFileBanner }
         let name = b.displayTitle
         if bookmarkBroken.contains(b.id) {
             return BannerModel(text: String(localized: "Bookmark failed"), actions: [BannerAction(title: String(localized: "Relocate…"), action: .relocate)])
@@ -283,6 +299,7 @@ final class AppState {
         session.selectedBufferID = id
         scheduleFlush()
         activeBufferChanged()
+        scheduleLargeFileTrim()
     }
 
     /// ⌃Tab and ⌃⇧Tab: the next or previous tab, wrapping around.
@@ -328,6 +345,9 @@ final class AppState {
 
     /// Called whenever the visible buffer changes (tab switch, close, restore).
     func activeBufferChanged() {
+        applyPreviewConcealment()
+        if let doc = activeLargeFile { return activateLargeFile(doc) }
+        if largeStatus != nil { largeStatus = nil }
         guard let b = selectedBuffer, let store = stores[b.id] else { return }
         Task { await checkSelectedFileForExternalChanges() }
         highlight.schedule(store: store, language: b.language, delay: .zero)
@@ -408,6 +428,7 @@ final class AppState {
 
     /// Hashes the current text now. The close predicate never trusts the debounced flag.
     func isDirtyNow(_ id: UUID) -> Bool {
+        if let doc = largeFiles[id] { return doc.hasEdits || doc.pendingEdits != nil }
         guard let store = stores[id], let b = session.buffers[id] else { return false }
         return DirtyReducer.isDirty(currentLogicalHash: ContentHash.logicalHex(store.logicalString()),
                                     lastSavedContentHash: b.lastSavedContentHash)
@@ -454,7 +475,7 @@ final class AppState {
         }
     }
 
-    private func setSelectionStats(_ stats: SelectionStats?) {
+    func setSelectionStats(_ stats: SelectionStats?) {
         if stats != selectionStats { selectionStats = stats }
     }
 
