@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TinyEdit</title>
-<meta name="description" content="TinyEdit 是一个 macOS 原生的纯文本编辑器，内置 JSON、Markdown、编解码、图片文字识别等工具。免费，开源。">
+<meta name="description" content="TinyEdit 是一个 macOS 原生的纯文本编辑器，内置 JSON、Markdown、编解码、图片文字识别等工具，几 GB 的日志也能秒开。免费，开源。">
 <meta property="og:title" content="TinyEdit">
-<meta property="og:description" content="A native macOS plain-text editor with JSON, Markdown, decoding and text recognition built in. Free and open source.">
+<meta property="og:description" content="A native macOS plain-text editor with JSON, Markdown, decoding and text recognition built in, that opens multi-gigabyte logs in an instant. Free and open source.">
 <meta property="og:image" content="https://yanghanqing.github.io/tinyedit/img/og.png">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
@@ -358,8 +358,8 @@ dialog.zoom img { max-height: 92vh; width: auto; border-radius: 10px; cursor: zo
   <div class="wrap">
     <h1><span class="zh">为 macOS 原生打造的<br>轻量文本编辑器</span><span class="en">A lightweight text editor,<br>made natively for macOS</span></h1>
     <p class="lede">
-      <span class="zh">适合日常的笔记、JSON 与 Markdown。粘贴进来的 Base64、截图和 curl 命令，也能在编辑器里直接处理。</span>
-      <span class="en">For everyday notes, JSON and Markdown. Base64, screenshots and curl commands you paste in are handled right in the editor.</span>
+      <span class="zh">适合日常的笔记、JSON 与 Markdown，几 GB 的日志也能秒开。粘贴进来的 Base64、截图和 curl 命令，也能在编辑器里直接处理。</span>
+      <span class="en">For everyday notes, JSON and Markdown, and logs of several gigabytes open in an instant. Base64, screenshots and curl commands you paste in are handled right in the editor.</span>
     </p>
     <div class="actions">
       <a class="btn primary" href="https://github.com/YangHanqing/tinyedit/releases/latest">
@@ -473,6 +473,21 @@ dialog.zoom img { max-height: 92vh; width: auto; border-radius: 10px; cursor: zo
 
     <div class="feat">
       <div>
+        <h3><span class="zh">打开大文件</span><span class="en">Large files</span></h3>
+        <p><span class="zh">几 GB 的日志和数据导出也能直接打开：内容立刻显示，滚动流畅，内存占用不随文件变大。</span><span class="en">Open multi-gigabyte logs and data exports directly: text appears at once, scrolling stays smooth, and memory use does not grow with the file.</span></p>
+        <ul class="points">
+          <li><span class="zh">全文搜索，支持正则表达式；可以只显示匹配的行，双击一行回到它在文件中的位置。</span><span class="en">Search the whole file, with regular expressions; show only the matching lines, and double-click one to see it in place.</span></li>
+          <li><span class="zh">跳到任意行；正在写入的日志可以像 <code>tail -f</code> 一样跟随末尾。</span><span class="en">Jump to any line, and follow a log that is still being written, like <code>tail -f</code>.</span></li>
+          <li><span class="zh">选中几行按回车即可修改，可以撤销；保存前不会改动原文件。</span><span class="en">Select a few lines and press Return to change them, with undo; the file changes only when you save.</span></li>
+          <li><span class="zh">选中一行 JSON（如 JSON Lines 日志）在新标签页打开，会自动格式化。</span><span class="en">Open a line of JSON (from a JSON Lines log, say) in a new tab, and it is formatted.</span></li>
+        </ul>
+        <p class="note"><span class="zh">在 1 GB、1100 万行的日志上实测：打开后 0.04 秒显示内容，1 秒内读完全文，全文搜索约 1 秒，内存约 20 MB。</span><span class="en">Measured on a 1 GB log of 11 million lines: text in 0.04 s, the whole file read in under a second, a full search in about a second, around 20 MB of memory.</span></p>
+      </div>
+      <div class="win"><img src="img/large-file.png" width="2200" height="1440" alt="A 1 GB log showing only the lines that match a regular expression" loading="lazy"><div class="lights"><i></i><i></i><i></i></div></div>
+    </div>
+
+    <div class="feat">
+      <div>
         <h3><span class="zh">粘贴内容识别</span><span class="en">Recognizing pasted text</span></h3>
         <p><span class="zh">粘贴 Base64、JWT、URL 编码、Unicode 转义或 JSON 字符串后，右上角会询问是否转换，并预览解码结果；可拷贝，也可替换粘贴的原文。Unix 时间戳会显示对应的本地时间。</span><span class="en">Paste Base64, a JWT, URL encoding, Unicode escapes or a JSON string, and a card in the corner offers to convert it with a preview of the result, to copy or to replace what you pasted. Unix timestamps show their local time.</span></p>
         <p><span class="zh">含终端颜色代码或不可见字符的文本，会提示一键清理。</span><span class="en">Text carrying terminal color codes or invisible characters gets a one-click cleanup.</span></p>
@@ -568,7 +583,9 @@ dialog.zoom img { max-height: 92vh; width: auto; border-radius: 10px; cursor: zo
     </div>
     <dl class="facts grid">
       <div><dt><span class="zh">在 Finder 中按空格预览</span><span class="en">Quick Look in Finder</span></dt>
-      <dd><span class="zh">Markdown 显示渲染效果，JSON 与代码带语法高亮。</span><span class="en">Markdown is shown rendered; JSON and code are highlighted.</span></dd></div>
+      <dd><span class="zh">Markdown 显示渲染效果，JSON 与代码带语法高亮；大文件按下空格即可看到开头部分。</span><span class="en">Markdown is shown rendered; JSON and code are highlighted; a large file shows its beginning at once.</span></dd></div>
+      <div><dt><span class="zh">在 Finder 中新建文本文件</span><span class="en">New text file from Finder</span></dt>
+      <dd><span class="zh">在访达窗口空白处右键，选择“用 TinyEdit 新建文本文件”，存储时文件放进该文件夹（需在设置中启用）。</span><span class="en">Right-click empty space in a Finder window and choose New Text File with TinyEdit; saving puts the file in that folder (turn it on in Settings).</span></dd></div>
       <div><dt><span class="zh">编码</span><span class="en">Encodings</span></dt>
       <dd><span class="zh">支持 UTF-8、UTF-16 与 GB18030（兼容 GBK、GB2312），保留原有的换行格式。</span><span class="en">UTF-8, UTF-16 and GB18030 (covering GBK and GB2312), with line endings kept as they were.</span></dd></div>
       <div><dt><span class="zh">外部修改提示</span><span class="en">Changes from other apps</span></dt>
@@ -578,7 +595,7 @@ dialog.zoom img { max-height: 92vh; width: auto; border-radius: 10px; cursor: zo
       <div><dt><span class="zh">外观与语言</span><span class="en">Appearance and language</span></dt>
       <dd><span class="zh">浅色、深色或跟随系统；提供简繁中文、英语、日语等八种界面语言。</span><span class="en">Light, dark or following the system, in eight interface languages.</span></dd></div>
       <div><dt><span class="zh">日常编辑</span><span class="en">Everyday editing</span></dt>
-      <dd><span class="zh">多标签页、查找替换、括号配对、缩进参考线，以及按行复制、移动与切换注释。</span><span class="en">Tabs, find and replace, bracket matching, indent guides, and line commands for copying, moving and commenting.</span></dd></div>
+      <dd><span class="zh">多标签页、查找替换（支持正则表达式）、括号配对、缩进参考线，以及按行复制、移动与切换注释。</span><span class="en">Tabs, find and replace (with regular expressions), bracket matching, indent guides, and line commands for copying, moving and commenting.</span></dd></div>
       <div><dt><span class="zh">Markdown 预览</span><span class="en">Markdown preview</span></dt>
       <dd><span class="zh">并排或单独预览，支持表格、代码块、图片和待办列表。</span><span class="en">Side by side or on its own, with tables, code blocks, pictures and task lists.</span></dd></div>
     </dl>
