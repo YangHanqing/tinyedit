@@ -33,6 +33,22 @@ final class AppStateIntegrationTests: XCTestCase {
         for _ in 0..<250 where !condition() { try? await Task.sleep(for: .milliseconds(20)) }
     }
 
+    /// The diagnostic report describes tabs by language and size, never by name, folder or text.
+    func testDiagnosticReportLeaksNoNamesPathsOrText() async throws {
+        let f = files.appendingPathComponent("quarterly-plan.md")
+        try Data("# Salaries\n\nconfidential-figure\n".utf8).write(to: f)
+        let a = await launch()
+        await a.openURLsAsync([f])
+        a.newTabInWindow()
+        type("untitled-secret", into: a)
+        let written = await DiagnosticReport.write(windows: [a])
+        let report = try String(contentsOf: try XCTUnwrap(written), encoding: .utf8)
+        XCTAssertTrue(report.contains("markdown"))
+        for secret in ["quarterly-plan", "Salaries", "confidential-figure", "untitled-secret", files.deletingLastPathComponent().lastPathComponent] {
+            XCTAssertFalse(report.contains(secret), secret)
+        }
+    }
+
     /// A large-file tab: edits are only in the session until Save, survive a relaunch (checked against the file
     /// again before they apply), are streamed into the file on Save, and an append shows up without a reload.
     func testLargeFileEditsSurviveRelaunchAndSaveWritesThem() async throws {

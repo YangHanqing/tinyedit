@@ -131,7 +131,10 @@ struct AppCommands: Commands {
                 ForEach(BackgroundPattern.allCases, id: \.self) { Text($0.label).tag($0) }
             }
         }
-        CommandGroup(replacing: .help) {}
+        // The one way to report a problem: a file to send, shown in Finder (`DiagnosticReport`).
+        CommandGroup(replacing: .help) {
+            Button("Export Diagnostic Report…") { DiagnosticReport.export() }
+        }
         CommandMenu("Tools") {
             Button("Command Palette…") { appState.togglePalette() }
                 .keyboardShortcut(AppShortcut.commandPalette)

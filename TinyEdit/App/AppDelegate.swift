@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         EndToEnd.run()
         #endif
         UpdateChecker.scheduleLaunchCheck()
+        DiagnosticReport.noteLaunch()
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil { DiagnosticStore.shared.start() }
         Task.detached(priority: .background) { LargeFileWriter.removeLeftovers() }
         // ⌘T opens a tab like ⌘N (New Window is ⇧⌘N). SwiftUI menus cannot hold a hidden second shortcut.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
