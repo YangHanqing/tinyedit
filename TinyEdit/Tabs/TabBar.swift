@@ -48,7 +48,7 @@ struct TabBar: View {
                                     onClose: { appState.closeTab(buffer.id) },
                                     isRenaming: renamingID == buffer.id,
                                     onRename: { finishRename(buffer.id, name: $0) })
-                                .contextMenu { menu(for: buffer) }
+                                .contextMenu { TabContextMenu(id: buffer.id, renamingID: $renamingID) }
                                 .background(TabDragSource(id: buffer.id, title: buffer.displayTitle, enabled: renamingID != buffer.id))
                                 .onDrop(of: [TabDrag.type], isTargeted: nil) { _ in dropTab(before: buffer.id) }
                         }
@@ -155,8 +155,29 @@ struct TabBar: View {
             .frame(width: TabStripLayout.revealMargin)
     }
 
-    @ViewBuilder private func menu(for buffer: EditorBuffer) -> some View {
-        let id = buffer.id
+    /// `name` is nil when the edit was cancelled. Return, Escape and the field losing focus all
+    /// end up here; only the first one counts.
+    private func finishRename(_ id: UUID, name: String?) {
+        guard renamingID == id else { return }
+        renamingID = nil
+        if let name { appState.renameTab(id, to: name) }
+        appState.host.focus()
+    }
+}
+
+/// A tab's context menu, as a view of its own: SwiftUI builds its items only when the menu opens. Built
+/// in the tab bar's body, every selection or title change made the items of every tab again, and Compare
+/// With lists all the other tabs, so the cost grew with the square of the tab count.
+private struct TabContextMenu: View {
+    let id: UUID
+    @Binding var renamingID: UUID?
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        if let buffer = appState.session.buffers[id] { items(buffer) }
+    }
+
+    @ViewBuilder private func items(_ buffer: EditorBuffer) -> some View {
         Button("Close Tab") { appState.closeTab(id) }
         Button("Close Other Tabs") { appState.closeTabs(.others, around: id) }
             .disabled(appState.tabsToClose(.others, around: id).isEmpty)
@@ -204,15 +225,6 @@ struct TabBar: View {
             if !others.isEmpty { Divider() }
             Button("Choose File…") { appState.chooseFileToCompare(id) }
         }
-    }
-
-    /// `name` is nil when the edit was cancelled. Return, Escape and the field losing focus all
-    /// end up here; only the first one counts.
-    private func finishRename(_ id: UUID, name: String?) {
-        guard renamingID == id else { return }
-        renamingID = nil
-        if let name { appState.renameTab(id, to: name) }
-        appState.host.focus()
     }
 }
 

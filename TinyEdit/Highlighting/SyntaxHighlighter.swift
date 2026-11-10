@@ -14,6 +14,9 @@ struct HighlightSpan: Sendable, Equatable {
 
 enum HighlightPolicy {
     static let fullLimit = 2_000_000
+    /// Up to this many UTF-16 units a keystroke is recolored at once: scanning takes about a millisecond, and
+    /// 200 ms later is long enough to see a typed quote or comment marker change the line's colors late.
+    static let promptLimit = 256_000
     static let offLimit = 5_000_000
 }
 

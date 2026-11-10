@@ -25,7 +25,7 @@ enum EndToEnd {
     static func prepare() {
         guard let phase else { return }
         let fm = FileManager.default
-        if phase == 3 || phase == 4 {
+        if phase == 3 || phase == 4 || phase == 5 {
             try? fm.removeItem(at: base)
             try? fm.createDirectory(at: root, withIntermediateDirectories: true)
         }
@@ -71,9 +71,12 @@ enum EndToEnd {
 
     static func run() {
         guard let phase else { return }
+        if phase == 6 { watchLaunch() }
         Task {
             await settle(600)
             switch phase {
+            case 5: await phasePerfSetup()
+            case 6: await phasePerf()
             case 1: await phase1()
             case 3: await phaseDiff()
             case 4: await phaseLargeSave()
@@ -319,6 +322,157 @@ enum EndToEnd {
         check(after == expected, "the saved file holds the edits and every other byte (\(after.count) of \(expected.count) bytes)")
         check(await wait(20) { doc.progress.complete && !doc.hasEdits }, "the tab reads the saved file again")
         check(main.session.buffers[id]?.dirty == false, "the tab is clean")
+    }
+
+    // MARK: Phases 5 and 6: how fast it feels
+
+    /// `--e2e 5` leaves a session of 30 file tabs (small sources, three of 1 MB, two of 8 MB, a long Markdown
+    /// file) and quits; `--e2e 6`, launched afterwards, is the cold launch that restores it, timed from the
+    /// process start, followed by tab switches, a new tab and the Markdown preview. Numbers go to `report-6.txt`.
+    private static var perfFiles: URL { base.appendingPathComponent("Perf", isDirectory: true) }
+
+    private static func phasePerfSetup() async {
+        let main = Workspaces.shared.main
+        check(await wait { main.launchGateOpen && main.window != nil }, "main window up")
+        let fm = FileManager.default
+        try? fm.createDirectory(at: perfFiles, withIntermediateDirectories: true)
+        func source(_ bytes: Int, _ i: Int) -> String {
+            var text = ""
+            var n = 0
+            while text.utf8.count < bytes {
+                text += "func value\(i)_\(n)(input: Int) -> String {\n    let doubled = input * 2 // 注释 \(n)\n    return \"result \\(doubled)\"\n}\n\n"
+                n += 1
+            }
+            return text
+        }
+        var urls: [URL] = []
+        for i in 0..<30 {
+            let (name, bytes) = i < 24 ? ("small\(i).swift", 20_000) : i < 27 ? ("medium\(i).swift", 1_000_000) : i < 29 ? ("big\(i).swift", 8_000_000) : ("notes.md", 0)
+            let url = perfFiles.appendingPathComponent(name)
+            var text = source(bytes, i)
+            if name == "notes.md" {
+                text = "# Notes\n\n"
+                for section in 1...12 {
+                    text += "## Section \(section) 模块\n\n这是一段比较长的说明文字，包含 **加粗**、`code` 和 [链接](https://example.com)。The quick brown fox jumps over the lazy dog until the line wraps.\n\n"
+                    for item in 1...8 { text += "- 第 \(item) 条 with `feature_\(item)` and more words\n" }
+                    text += "\n| 名称 | 类型 | 说明 |\n| --- | --- | --- |\n"
+                    for row in 1...6 { text += "| `option\(row)` | String | 第 \(row) 个选项的说明 with English |\n" }
+                    text += "\n```swift\nfunc example\(section)() -> Int { \(section) }\n```\n\n"
+                }
+            }
+            try? text.write(to: url, atomically: true, encoding: .utf8)
+            urls.append(url)
+        }
+        await main.openURLsAsync(urls)
+        check(main.session.tabOrder.count >= 30, "30 files open (\(main.session.tabOrder.count) tabs)")
+        if let first = main.session.tabOrder.first { main.selectTab(first) }
+        await settle()
+        await main.performFlush()
+    }
+
+    private static var launchMarks: [(String, Double)] = []
+
+    /// Seconds since this process started (the kernel's start time, so the launch itself is counted).
+    private static func sinceProcessStart() -> Double {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return -1 }
+        let start = info.kp_proc.p_starttime
+        return Date().timeIntervalSince1970 - (Double(start.tv_sec) + Double(start.tv_usec) / 1_000_000)
+    }
+
+    private static func watchLaunch() {
+        launchMarks.append(("applicationDidFinishLaunching", sinceProcessStart()))
+        Task {
+            let main = Workspaces.shared.main
+            var pending: [(String, () -> Bool)] = [
+                ("window on screen", { main.window?.isVisible == true }),
+                ("text in the editor", { main.host.activeStore != nil && main.window?.isVisible == true }),
+                ("ready for commands (launch gate)", { main.launchGateOpen }),
+            ]
+            while !pending.isEmpty {
+                pending.removeAll { name, done in
+                    guard done() else { return false }
+                    launchMarks.append((name, sinceProcessStart()))
+                    return true
+                }
+                try? await Task.sleep(for: .milliseconds(2))
+            }
+        }
+    }
+
+    private static func ms(_ seconds: Double) -> String { String(format: "%.1f ms", seconds * 1000) }
+
+    /// The change, then everything it makes the window lay out and draw.
+    private static func frame(_ window: NSWindow?, _ change: () -> Void) -> Double {
+        let start = CFAbsoluteTimeGetCurrent()
+        change()
+        RunLoop.current.run(mode: .default, before: Date())
+        CATransaction.flush()
+        window?.layoutIfNeeded()
+        window?.displayIfNeeded()
+        CATransaction.flush()
+        return CFAbsoluteTimeGetCurrent() - start
+    }
+
+    private static func phasePerf() async {
+        let main = Workspaces.shared.main
+        check(await wait(60) { main.launchGateOpen && main.window != nil }, "main window up")
+        await settle(300)
+        note("tabs restored: \(main.session.tabOrder.count)")
+        for (name, time) in launchMarks { note("launch, \(name): \(ms(time))") }
+
+        let order = main.session.tabOrder
+        func title(_ id: UUID) -> String { main.session.buffers[id]?.title ?? "?" }
+        var small: [Double] = []
+        for round in 0..<2 {
+            for id in order {
+                let time = frame(main.window) { main.selectTab(id) }
+                let name = title(id)
+                if name.hasPrefix("small") { small.append(time) } else { note("switch to \(name) (\(round == 0 ? "first" : "again")): \(ms(time))") }
+            }
+        }
+        let sorted = small.sorted()
+        if !sorted.isEmpty { note("switch to a 20 KB tab: median \(ms(sorted[sorted.count / 2])), max \(ms(sorted[sorted.count - 1])) of \(sorted.count)") }
+
+        // A keystroke in a small source file, until its colors are on screen.
+        if let id = order.first(where: { title($0).hasPrefix("small") }), let store = main.stores[id] {
+            _ = frame(main.window) { main.selectTab(id) }
+            await settle(400)
+            var keys: [Double] = [], colors: [Double] = []
+            for _ in 0..<30 {
+                let start = CFAbsoluteTimeGetCurrent()
+                keys.append(frame(main.window) { main.host.textView.insertText("x", replacementRange: NSRange(location: 0, length: 0)) })
+                for _ in 0..<2000 where store.unhighlightedEdits != nil { try? await Task.sleep(for: .milliseconds(1)) }
+                _ = frame(main.window) {}
+                colors.append(CFAbsoluteTimeGetCurrent() - start)
+                await settle(30)
+            }
+            keys.sort(); colors.sort()
+            note("keystroke in a 20 KB tab, drawn: median \(ms(keys[keys.count / 2])), max \(ms(keys[keys.count - 1]))")
+            note("keystroke to recolored: median \(ms(colors[colors.count / 2])), max \(ms(colors[colors.count - 1]))")
+            main.host.textView.undoManager?.undo()
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--loop") {
+            // For a profiler: nothing but tab switches for a while.
+            let end = Date().addingTimeInterval(8)
+            while Date() < end { for id in order where title(id).hasPrefix("small") { _ = frame(main.window) { main.selectTab(id) } } }
+        }
+
+        note("new tab: \(ms(frame(main.window) { main.newTabInWindow() }))")
+
+        if let notes = order.first(where: { title($0) == "notes.md" }) {
+            _ = frame(main.window) { main.selectTab(notes) }
+            let start = CFAbsoluteTimeGetCurrent()
+            main.togglePreview()
+            let shown = await wait(10) { !main.previewBlocks.isEmpty }
+            _ = frame(main.window) {}
+            check(shown, "preview shown")
+            note("Markdown preview, from the command to drawn: \(ms(CFAbsoluteTimeGetCurrent() - start))")
+            main.togglePreview()
+        }
     }
 
     // MARK: Phase 3: Compare With

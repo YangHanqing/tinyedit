@@ -369,7 +369,8 @@ final class AppState {
         scheduleDirtyCheck(id)
         scheduleFlush()
         if let lang = session.buffers[id]?.language, id == session.selectedBufferID {
-            highlight.schedule(store: store, language: lang)
+            highlight.schedule(store: store, language: lang,
+                               delay: store.length <= HighlightPolicy.promptLimit ? .zero : .milliseconds(200))
             schedulePreview()
             refreshFindMatches(delay: .milliseconds(150))
         }

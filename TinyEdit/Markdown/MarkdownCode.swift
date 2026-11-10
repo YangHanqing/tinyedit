@@ -12,8 +12,29 @@ enum MarkdownCode {
 
     static func spans(_ code: String, hint: String?) -> [HighlightSpan] {
         guard code.utf8.count <= HighlightPolicy.fullLimit else { return [] }
-        return SyntaxHighlighter.spans(language: language(hint), text: code, limit: nil)
+        let spans = SyntaxHighlighter.spans(language: language(hint), text: code, limit: nil)
+        cache.setObject(Spans(spans), forKey: key(code, hint: hint), cost: spans.count)
+        return spans
     }
+
+    /// The colors of a block scanned before. The preview's rows are rebuilt as they scroll into view; without
+    /// this each code block showed plain for a moment every time it came back.
+    static func cachedSpans(_ code: String, hint: String?) -> [HighlightSpan]? {
+        cache.object(forKey: key(code, hint: hint))?.spans
+    }
+
+    private final class Spans: Sendable {
+        let spans: [HighlightSpan]
+        init(_ spans: [HighlightSpan]) { self.spans = spans }
+    }
+
+    private static let cache: NSCache<NSString, Spans> = {
+        let cache = NSCache<NSString, Spans>()
+        cache.totalCostLimit = 400_000
+        return cache
+    }()
+
+    private static func key(_ code: String, hint: String?) -> NSString { "\(hint ?? "")|\(code)" as NSString }
 
     @MainActor static func styled(_ code: String, spans: [HighlightSpan]) -> NSAttributedString {
         let value = NSMutableAttributedString(attributedString: MarkdownText.plain(code,
@@ -28,8 +49,14 @@ enum MarkdownCode {
 struct MarkdownCodeView: View {
     let language: String?
     let code: String
-    @State private var spans: [HighlightSpan] = []
+    @State private var spans: [HighlightSpan]
     @State private var copied = false
+
+    init(language: String?, code: String) {
+        self.language = language
+        self.code = code
+        _spans = State(initialValue: MarkdownCode.cachedSpans(code, hint: language) ?? [])
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -58,9 +85,14 @@ struct MarkdownCodeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
         .task(id: "\(language ?? "")|\(code)") {
-            spans = []
             copied = false
-            let result = await Task.detached(priority: .utility) { MarkdownCode.spans(code, hint: language) }.value
+            // The colors on screen stay until the new ones are ready (an edit inside the block moves them by a
+            // few characters for a moment, which reads better than the whole block going plain).
+            if let cached = MarkdownCode.cachedSpans(code, hint: language) {
+                if cached != spans { spans = cached }
+                return
+            }
+            let result = await Task.detached(priority: .userInitiated) { MarkdownCode.spans(code, hint: language) }.value
             if !Task.isCancelled { spans = result }
         }
     }

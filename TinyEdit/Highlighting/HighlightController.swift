@@ -59,7 +59,8 @@ final class HighlightController {
         if size > HighlightPolicy.fullLimit {
             limit = visibleWindow(store: store, host: host)
         }
-        let spans = await Task.detached(priority: .utility) {
+        // A small document is recolored as it is typed, so its scan must not wait behind background work.
+        let spans = await Task.detached(priority: size <= HighlightPolicy.promptLimit ? .userInitiated : .utility) {
             SyntaxHighlighter.spans(language: language, text: text, limit: limit)
         }.value
         guard !Task.isCancelled, host.activeStore === store, store.highlightToken == token else { return }

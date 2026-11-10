@@ -210,8 +210,11 @@ extension AppState {
         }
 
         // Files that changed on disk while the app was closed are checked before the gate opens.
-        for id in session.tabOrder where fileURLs[id] != nil || session.buffers[id]?.fileBookmark != nil {
-            await verifyRestoredFile(id)
+        // Together, not one after another: each one reads and hashes its file off the main thread, and with
+        // many file tabs the wait in a row is what kept ⌘N and opened files waiting after launch.
+        let restored = session.tabOrder.filter { fileURLs[$0] != nil || session.buffers[$0]?.fileBookmark != nil }
+        await withTaskGroup(of: Void.self) { group in
+            for id in restored { group.addTask { @MainActor in await self.verifyRestoredFile(id) } }
         }
 
         let queued = pendingURLs
