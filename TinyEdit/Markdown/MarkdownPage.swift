@@ -55,7 +55,7 @@ struct MarkdownPage: View {
     }
 }
 
-private enum MarkdownStyle {
+enum MarkdownStyle {
     static let pagePadding: CGFloat = 16
     static let quoteInset: CGFloat = 13
     static let bodySize = NSFont.systemFontSize
@@ -74,7 +74,7 @@ private enum MarkdownStyle {
     }
 }
 
-private extension EnvironmentValues {
+extension EnvironmentValues {
     @Entry var markdownListDepth = 0
     @Entry var markdownSecondaryText = false
 }
@@ -113,7 +113,11 @@ private struct MarkdownBlockView: View {
         case .list(let list):
             MarkdownListView(list: list, path: path)
         case .table(let table):
-            MarkdownTableView(table: table)
+            if MarkdownTableTextView.canShow(table) {
+                ScrollView(.horizontal) { MarkdownTableTextView(table: table, availableWidth: availableWidth) }
+            } else {
+                MarkdownTableGrid(table: table)
+            }
         case .thematicBreak:
             Divider().padding(.vertical, 4)
         case .html(let source):
@@ -128,9 +132,13 @@ private struct MarkdownBlockStack: View {
     let path: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: MarkdownStyle.nestedSpacing) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { index, node in
-                MarkdownBlockView(node: node, path: "\(path).\(index)")
+        if blocks.count == 1 {
+            MarkdownBlockView(node: blocks[0], path: "\(path).0")
+        } else {
+            VStack(alignment: .leading, spacing: MarkdownStyle.nestedSpacing) {
+                ForEach(Array(blocks.enumerated()), id: \.offset) { index, node in
+                    MarkdownBlockView(node: node, path: "\(path).\(index)")
+                }
             }
         }
     }
@@ -192,7 +200,8 @@ private struct MarkdownTaskBox: View {
     }
 }
 
-private struct MarkdownTableView: View {
+/// The table as SwiftUI views, for one that holds a picture (see `MarkdownTableTextView`).
+private struct MarkdownTableGrid: View {
     let table: MarkdownTable
     @Environment(\.markdownAvailableWidth) private var availableWidth
     @State private var measure = MarkdownTableMeasure()
@@ -298,15 +307,24 @@ private struct MarkdownInlineView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(MarkdownInline.parts(text).enumerated()), id: \.offset) { _, part in
-                switch part {
-                case .text(let value):
-                    MarkdownTextView(text: MarkdownText.attributed(value,
-                        style: .init(size: size, weight: weight, secondary: secondary, alignment: alignment)))
-                case .image(let reference): MarkdownImageView(reference: reference)
+        let parts = MarkdownInline.parts(text)
+        // Nearly every block is one run of text: no stack around it, one view fewer per block.
+        if parts.count == 1, case .text(let value) = parts[0] {
+            label(value)
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                    switch part {
+                    case .text(let value): label(value)
+                    case .image(let reference): MarkdownImageView(reference: reference)
+                    }
                 }
             }
         }
+    }
+
+    private func label(_ value: AttributedString) -> MarkdownTextView {
+        MarkdownTextView(text: MarkdownText.attributed(value,
+            style: .init(size: size, weight: weight, secondary: secondary, alignment: alignment)))
     }
 }
