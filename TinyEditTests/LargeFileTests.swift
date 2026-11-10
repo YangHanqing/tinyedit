@@ -138,10 +138,10 @@ final class LargeFileTests: XCTestCase {
         let q = try XCTUnwrap(LargeFileQuery(#"id=(\d*)5 ok$"#, caseSensitive: true, regex: true, encoding: .utf8))
         let scanner = LargeFileRegexScanner(source: source, index: index, edits: edits, regex: try XCTUnwrap(q.regex),
                                             encoding: .utf8, displayRows: edits.displayCount(baseRows: index.progress.rows))
-        var hits: [(Int, NSRange)] = []
+        var hits: [(row: Int, count: Int)] = []
         scanner.forEach(isCancelled: { false }) { hits.append(($0, $1)); return true }
-        XCTAssertEqual(hits.count, 500)   // ids ending in 5; the edits' lines are searched where they sit
-        XCTAssertEqual(hits.first?.1, NSRange(location: 2, length: 7))   // "é " is two UTF-16 units
+        XCTAssertEqual(hits.reduce(0) { $0 + $1.count }, 500)   // ids ending in 5; the edits' lines are searched where they sit
+        XCTAssertEqual(scanner.forward(display: 0, column: 0)?.1, NSRange(location: 2, length: 7))   // "é " is two UTF-16 units
         XCTAssertEqual(scanner.forward(display: 4096, column: 0)?.0, 4105)   // across the batch boundary
         XCTAssertEqual(scanner.backward(display: 4105, column: 0)?.0, 4095)
         XCTAssertNil(LargeFileQuery("([", caseSensitive: true, regex: true, encoding: .utf8))
@@ -232,6 +232,57 @@ final class LargeFileTests: XCTestCase {
         var count = 0
         scanner.forEach(isCancelled: { false }) { _, _ in count += 1; return true }
         XCTAssertLessThan(count, 3000)
+    }
+
+    /// Long rows: batches are cut by bytes, not only rows, and a batch reports a count per row, never one entry
+    /// per match (`.` over a 2 GB file would otherwise collect billions of ranges). Every match counts once.
+    func testRegexCountsEveryMatchOnceAcrossByteSizedBatches() throws {
+        let url = try file(Data(Array(repeating: String(repeating: "x", count: 10_000), count: 400).joined(separator: "\n").utf8))
+        let (source, index) = try indexed(url, .utf8)
+        let q = try XCTUnwrap(LargeFileQuery(".", caseSensitive: true, regex: true, encoding: .utf8))
+        let scanner = LargeFileRegexScanner(source: source, index: index, edits: LargeFileEdits(), regex: try XCTUnwrap(q.regex),
+                                            encoding: .utf8, displayRows: index.progress.rows)
+        var total = 0, rows = 0
+        scanner.forEach(isCancelled: { false }) { _, count in total += count; rows += 1; return true }
+        XCTAssertEqual(total, 4_000_000)
+        XCTAssertEqual(rows, 400)
+        XCTAssertEqual(scanner.forward(display: 399, column: 9_999)?.1, NSRange(location: 9_999, length: 1))
+    }
+
+    /// An edit can't be taken while a reload reads the file again: the reload would drop it, with its undo.
+    @MainActor
+    func testNoEditWhileReloading() async throws {
+        let url = try file(Data("a\nb\nc\n".utf8))
+        let doc = LargeFileDocument(id: UUID(), encoding: .utf8)
+        doc.attach(try LargeFileSource(url: url), encoding: .utf8)
+        while !doc.progress.complete { try await Task.sleep(for: .milliseconds(10)) }
+        let reload = Task { await doc.reload(url) }
+        for _ in 0..<1000 where !doc.isReloading { await Task.yield() }
+        XCTAssertTrue(doc.isReloading)
+        XCTAssertFalse(doc.replaceRows(1...1, with: "B", actionName: "Edit"))
+        let reloaded = await reload.value
+        XCTAssertTrue(reloaded)
+        XCTAssertFalse(doc.hasEdits)
+        XCTAssertFalse(doc.isReloading)
+    }
+
+    /// Overwrite (or Save As onto the file) replaces the version there when the save started, not lines a log
+    /// writer added while the new version was being written.
+    func testInstallRefusesAFileThatChangedDuringTheWrite() throws {
+        let url = try file(Data("one\n".utf8))
+        let expected = try XCTUnwrap(LargeFileFingerprint.of(path: url.path))
+        let tmp = try file(Data("ONE\n".utf8), "new.tmp")
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("two\n".utf8))
+        try handle.close()
+        XCTAssertThrowsError(try LargeFileWriter.install(tmp, at: url, expected: expected, presenter: nil)) {
+            XCTAssertEqual($0 as? LargeFileSaveError, .externalChange)
+        }
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "one\ntwo\n")
+        let now = try XCTUnwrap(LargeFileFingerprint.of(path: url.path))
+        XCTAssertNoThrow(try LargeFileWriter.install(tmp, at: url, expected: now, presenter: nil))
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "ONE\n")
     }
 }
 

@@ -507,6 +507,12 @@ extension AppState: LargeFileViewDelegate {
             flushImmediately()
             return .saved
         case .failure(.externalChange):
+            // Save As to another file that changed during the write: nothing was written, and this tab's own file
+            // did not change.
+            guard let own = fileURLs[id], FileAccessManager.key(own) == FileAccessManager.key(url) else {
+                showToast(String(localized: "Could not save file"), error: true)
+                return .failed
+            }
             session.buffers[id]?.conflict = .external
             return .conflict
         case .failure(.editsNoLongerMatch):

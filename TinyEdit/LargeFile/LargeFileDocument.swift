@@ -67,6 +67,10 @@ final class LargeFileDocument {
     private(set) var progress = LargeFileIndex.Progress(rows: 0, lines: 0, scannedBytes: 0, complete: false)
     private(set) var isOpening = false
     private(set) var saveProgress: Double?
+    /// A reload is reading the file again: an edit made now would be dropped when it lands, so none is taken.
+    private(set) var isReloading = false
+    /// The latest reload; an older one that finishes after it gives way.
+    private var reloadToken = 0
     var conflictCanSaveAs = true
 
     // MARK: View state (not observed)
@@ -131,7 +135,7 @@ final class LargeFileDocument {
     /// What the snapshot holds: applied edits, or ones still waiting for their check.
     var snapshotEdits: LargeFileEdits { pendingEdits ?? edits }
     var isSaving: Bool { saveProgress != nil }
-    var canEdit: Bool { isOpen && progress.complete && pendingEdits == nil && !editsMismatch && filterRows == nil && !isSaving }
+    var canEdit: Bool { isOpen && progress.complete && pendingEdits == nil && !editsMismatch && filterRows == nil && !isSaving && !isReloading }
     var fileSize: Int { source?.size ?? acknowledged?.size ?? 0 }
     var baseRows: Int { progress.rows }
     var displayRows: Int { edits.displayCount(baseRows: baseRows) }
@@ -347,8 +351,22 @@ final class LargeFileDocument {
     }
 
     /// Reads the file again from scratch (after a save, Reload From Disk, or a replaced file). Edits are dropped.
+    /// Edits are refused while it reads (`isReloading`). A newer reload started meanwhile does the work, and this
+    /// one reports success for it.
     func reload(_ url: URL, encoding newEncoding: TextEncoding? = nil) async -> Bool {
-        guard let (source, encoding) = try? await Self.openSource(url, encoding: newEncoding ?? encoding) else { return false }
+        reloadToken += 1
+        let token = reloadToken
+        isReloading = true
+        pushStatus(force: true)
+        defer {
+            if token == reloadToken {
+                isReloading = false
+                pushStatus(force: true)
+            }
+        }
+        let opened = try? await Self.openSource(url, encoding: newEncoding ?? encoding)
+        guard token == reloadToken else { return true }
+        guard let (source, encoding) = opened else { return false }
         edits = LargeFileEdits()
         pendingEdits = nil
         editsMismatch = false
@@ -577,8 +595,9 @@ final class LargeFileDocument {
         return apply(changes, actionName: actionName)
     }
 
-    /// Edits whose text is the row's own again stop being edits.
+    /// Edits whose text is the row's own again stop being edits. None is taken during a reload, which would drop it.
     func apply(_ changes: [LargeFileEdit], actionName: String) -> Bool {
+        guard !isReloading else { return false }
         var next = edits
         let added = changes.filter { next.edit(forRow: $0.row) == nil }.count
         guard next.count + added <= LargeFileEdits.maxRows else { return false }
@@ -594,7 +613,7 @@ final class LargeFileDocument {
 
     private func setEdits(_ new: LargeFileEdits, actionName: String) {
         let old = edits
-        guard new != old else { return }
+        guard new != old, !isReloading else { return }
         edits = new
         generation += 1
         displayVersion += 1
@@ -658,27 +677,27 @@ final class LargeFileDocument {
         let scanner = regexScanner(q)
         countTask = Task { [weak self] in
             // Matches before the last row, and in it: the next append goes on from the split.
-            let counted = await Task.detached(priority: .utility) { () -> (before: Int, last: Int)? in
+            let counted = await largeFileDetached(priority: .utility) { (isCancelled: LargeFileCancelCheck) -> (before: Int, last: Int)? in
                 var before = resume?.before ?? 0, last = 0
                 if let scanner {
                     let from = resume.map { edits.displayRow(forBase: $0.tail.row) } ?? 0
                     let split = edits.displayRow(forBase: newTail.row)
-                    scanner.forEach(from: from, isCancelled: { Task.isCancelled }) { display, _ in
-                        if display < split { before += 1 } else { last += 1 }
+                    scanner.forEach(from: from, isCancelled: { isCancelled() }) { display, count in
+                        if display < split { before += count } else { last += count }
                         return true
                     }
-                    return Task.isCancelled ? nil : (before, last)
+                    return isCancelled() ? nil : (before, last)
                 }
                 LargeFileSearch.forEachMatch(in: source, q, start: resume?.tail.offset ?? start, end: end,
-                                             isCancelled: { Task.isCancelled }) { offset in
+                                             isCancelled: { isCancelled() }) { offset in
                     if edits.edit(containingOffset: offset) == nil {
                         if offset < newTail.offset { before += 1 } else { last += 1 }
                     }
                     return true
                 }
                 if resume == nil { for e in edits.edits { for line in e.lines { before += q.ranges(in: line).count } } }
-                return Task.isCancelled ? nil : (before, last)
-            }.value
+                return isCancelled() ? nil : (before, last)
+            }
             guard let self, !Task.isCancelled, let counted else { return }
             self.countCache = (key, newTail, counted.before)
             self.onFindCount?(counted.before + counted.last)
@@ -865,28 +884,28 @@ final class LargeFileDocument {
         let start = index.splitter.bomLength
         let scanner = regexScanner(q)
         filterTask = Task { [weak self, kept] in
-            let result = await Task.detached(priority: .userInitiated) { () -> (rows: [Int], capped: Bool)? in
+            let result = await largeFileDetached(priority: .userInitiated) { (isCancelled: LargeFileCancelCheck) -> (rows: [Int], capped: Bool)? in
                 var rows: [Int] = []
                 var capped = false
                 let limit = LargeFilePolicy.filterLimit - (kept?.count ?? 0)
                 if let scanner {
                     let from = kept != nil ? edits.displayRow(forBase: tail!.row) : 0
-                    scanner.forEach(from: from, isCancelled: { Task.isCancelled }) { display, _ in
+                    scanner.forEach(from: from, isCancelled: { isCancelled() }) { display, _ in
                         if rows.last != display { rows.append(display) }
                         if rows.count >= limit { capped = true; return false }
                         return true
                     }
-                    return Task.isCancelled ? nil : ((kept ?? []) + rows, capped)
+                    return isCancelled() ? nil : ((kept ?? []) + rows, capped)
                 }
                 LargeFileSearch.forEachMatch(in: source, q, start: kept != nil ? tail!.offset : start, end: end,
-                                             isCancelled: { Task.isCancelled }) { offset in
+                                             isCancelled: { isCancelled() }) { offset in
                     if edits.edit(containingOffset: offset) != nil { return true }
                     let r = index.row(containing: offset, source: source)
                     if rows.last != r { rows.append(r) }
                     if rows.count >= limit { capped = true; return false }
                     return true
                 }
-                if Task.isCancelled { return nil }
+                if isCancelled() { return nil }
                 var display = rows.map { edits.displayRow(forBase: $0) }
                 if let kept { return (kept + display, capped) }
                 for e in edits.edits {
@@ -895,7 +914,7 @@ final class LargeFileDocument {
                 }
                 display.sort()
                 return (display, capped)
-            }.value
+            }
             guard let self, !Task.isCancelled, let result else { return }
             self.filterRows = result.rows
             self.filterCapped = result.capped
@@ -929,7 +948,7 @@ final class LargeFileDocument {
     /// Streams the file with its edits (and a large Replace All) to `url`. Off the main thread, with progress.
     func save(to url: URL, overwrite: Bool, presenter: NSFilePresenter?, replacement: LargeFileReplacement? = nil,
               extraBytes: Int = 0) async -> Result<LargeFileFingerprint, LargeFileSaveError> {
-        guard let source, pendingEdits == nil, !editsMismatch, !isSaving else { return .failure(.couldNotSave) }
+        guard let source, pendingEdits == nil, !editsMismatch, !isSaving, !isReloading else { return .failure(.couldNotSave) }
         let tmp = LargeFileWriter.tempURL()
         let estimate = estimatedSavedBytes + extraBytes
         do {
@@ -940,7 +959,8 @@ final class LargeFileDocument {
         } catch {
             return .failure(.couldNotSave)
         }
-        // A file that is not the one read (replaced, or rewritten in place) needs the user's go-ahead.
+        // A file that is not the one read (replaced, or rewritten in place) needs the user's go-ahead. That
+        // go-ahead (`overwrite`) is for the version there now: one that changes during the write is not replaced.
         let current = LargeFileFingerprint.of(path: url.path)
         let sameAsRead = current.map { c in source.fingerprint.map { c.isSameFile(as: $0) && c.size == $0.size } ?? false } ?? true
         if !overwrite, current != nil, !sameAsRead { return .failure(.externalChange) }
@@ -972,8 +992,8 @@ final class LargeFileDocument {
                     last = now
                     report(p)
                 }
-                return .success(try LargeFileWriter.install(tmp, at: url, expected: overwrite ? nil : current,
-                                                            overwrite: overwrite, presenter: presenter))
+                return .success(try LargeFileWriter.install(tmp, at: url, expected: current,
+                                                            presenter: presenter))
             } catch LargeFileSaveError.notEnoughSpace {
                 // The disk filled during the write (another app, or a Replace All that grew the text).
                 return .failure(.notEnoughSpace(needed: needed))

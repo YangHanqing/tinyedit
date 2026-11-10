@@ -193,6 +193,9 @@ struct LargeFileRegexScanner: @unchecked Sendable {
     let displayRows: Int
 
     static let batchRows = 4096
+    /// About how many bytes one batch decodes: rows of up to 16 KB would otherwise make a batch 64 MB of
+    /// file (128 MB of UTF-16), once per core.
+    static let batchBytes = 2 * 1_048_576
 
     /// The text of display rows `range`, each followed by a line break, and where each row starts in it.
     private func batch(_ range: Range<Int>) -> (NSString, [Int]) {
@@ -232,54 +235,113 @@ struct LargeFileRegexScanner: @unchecked Sendable {
         return (NSString(characters: units, length: units.count), starts)
     }
 
-    /// The matches in display rows `range`, in order, as (display row, range in the row).
-    func matches(in range: Range<Int>) -> [(Int, NSRange)] {
+    /// Display rows from `lo`: at most `batchRows` of them and, past the first, about `batchBytes` of text.
+    private func batchRange(from lo: Int) -> Range<Int> {
+        let hi = min(lo + Self.batchRows, displayRows)
+        var bytes = 0
+        var d = lo
+        if edits.isEmpty {
+            for r in index.rows(lo..<hi, source: source) {
+                bytes += r.contentEnd - r.start + 1
+                d += 1
+                if bytes >= Self.batchBytes { break }
+            }
+            return lo..<max(d, lo + 1)
+        }
+        while d < hi {
+            let (row, line) = edits.locate(d)
+            if let line, let e = edits.edit(forRow: row) {
+                bytes += (line < e.lines.count ? e.lines[line].utf8.count : 0) + 1
+            } else if let r = index.row(row, source: source) {
+                bytes += r.contentEnd - r.start + 1
+            }
+            d += 1
+            if bytes >= Self.batchBytes { break }
+        }
+        return lo..<max(d, lo + 1)
+    }
+
+    /// Runs the expression over display rows `range`, each match as (display row, range in the row), in order;
+    /// `body` returning false stops. A match across rows (over the added line break) does not count.
+    private func enumerate(_ range: Range<Int>, isCancelled: () -> Bool, _ body: (Int, NSRange) -> Bool) {
         let (text, starts) = batch(range)
-        var out: [(Int, NSRange)] = []
         var i = 0
-        regex.enumerateMatches(in: text as String, options: [], range: NSRange(location: 0, length: text.length)) { m, _, _ in
+        var seen = 0
+        regex.enumerateMatches(in: text as String, options: [], range: NSRange(location: 0, length: text.length)) { m, _, stop in
+            seen += 1
+            if seen & 0x3FF == 0, isCancelled() { stop.pointee = true; return }
             guard let r = m?.range, r.length > 0 else { return }
             while i + 1 < starts.count, starts[i + 1] <= r.location { i += 1 }
             let rowEnd = starts[i + 1] - 1   // before the added line break
             guard NSMaxRange(r) <= rowEnd else { return }
-            out.append((range.lowerBound + i, NSRange(location: r.location - starts[i], length: r.length)))
+            if !body(range.lowerBound + i, NSRange(location: r.location - starts[i], length: r.length)) { stop.pointee = true }
+        }
+    }
+
+    /// How many matches each display row in `range` holds (rows without one left out): a batch's result is at
+    /// most one entry per row, however many matches (`.` finds one per character).
+    private func rowCounts(in range: Range<Int>, isCancelled: () -> Bool) -> [(row: Int, count: Int)] {
+        var out: [(row: Int, count: Int)] = []
+        enumerate(range, isCancelled: isCancelled) { row, _ in
+            if out.last?.row == row { out[out.count - 1].count += 1 } else { out.append((row, 1)) }
+            return true
         }
         return out
     }
 
-    /// Every match from display row `from` on, in order; `body` returning false stops. Decoding is most of
-    /// the cost, so a round of batches is decoded and searched on every core, then delivered in order.
-    func forEach(from: Int = 0, isCancelled: () -> Bool, progress: ((Int) -> Void)? = nil,
-                 _ body: (Int, NSRange) -> Bool) {
+    /// Batches of display rows from `lo`, one per core, decoded and searched in parallel; `work` runs on each.
+    private func round<T>(from lo: Int, _ work: @Sendable (Range<Int>) -> T) -> (results: [T], end: Int) {
         let width = max(ProcessInfo.processInfo.activeProcessorCount, 1)
+        var ranges: [Range<Int>] = []
+        var next = lo
+        while ranges.count < width, next < displayRows {
+            let r = batchRange(from: next)
+            ranges.append(r)
+            next = r.upperBound
+        }
+        let batches = ranges
+        let found = Locked([T?](repeating: nil, count: batches.count))
+        DispatchQueue.concurrentPerform(iterations: batches.count) { i in
+            let m = work(batches[i])
+            found.withLock { $0[i] = m }
+        }
+        return (found.withLock { $0 }.map { $0! }, next)
+    }
+
+    /// Every row with matches from display row `from` on, in order, with its number of matches; `body`
+    /// returning false stops. Decoding is most of the cost, so a round of batches is decoded and searched on
+    /// every core, then delivered in order.
+    func forEach(from: Int = 0, isCancelled: @Sendable () -> Bool, progress: ((Int) -> Void)? = nil,
+                 _ body: (_ row: Int, _ count: Int) -> Bool) {
         var lo = max(from, 0)
         while lo < displayRows, !isCancelled() {
-            let ranges = (0..<width).compactMap { i -> Range<Int>? in
-                let a = lo + i * Self.batchRows
-                return a < displayRows ? a..<min(a + Self.batchRows, displayRows) : nil
+            let (batches, end) = round(from: lo) { rowCounts(in: $0, isCancelled: isCancelled) }
+            if isCancelled() { return }
+            for batch in batches {
+                for (row, count) in batch where !body(row, count) { return }
             }
-            let found = Locked(Array(repeating: [(Int, NSRange)](), count: ranges.count))
-            DispatchQueue.concurrentPerform(iterations: ranges.count) { i in
-                let m = matches(in: ranges[i])
-                found.withLock { $0[i] = m }
-            }
-            for batch in found.withLock({ $0 }) {
-                for (row, r) in batch where !body(row, r) { return }
-            }
-            lo = ranges.last!.upperBound
+            lo = end
             progress?(lo)
         }
     }
 
     /// The first match at or after (display, column).
     func forward(display: Int, column: Int) -> (Int, NSRange)? {
-        var found: (Int, NSRange)?
-        forEach(from: display, isCancelled: { false }) { row, r in
-            if row == display, r.location < column { return true }
-            found = (row, r)
-            return false
+        var lo = max(display, 0)
+        while lo < displayRows {
+            let (firsts, end) = round(from: lo) { range -> (Int, NSRange)? in
+                var hit: (Int, NSRange)?
+                enumerate(range, isCancelled: { false }) { row, r in
+                    if row == display, r.location < column { return true }
+                    hit = (row, r)
+                    return false
+                }
+                return hit
+            }
+            if let hit = firsts.lazy.compactMap({ $0 }).first { return hit }
+            lo = end
         }
-        return found
+        return nil
     }
 
     /// The last match before (display, column).
@@ -287,11 +349,30 @@ struct LargeFileRegexScanner: @unchecked Sendable {
         var hi = min(display + 1, displayRows)
         while hi > 0 {
             let lo = max(hi - Self.batchRows, 0)
-            let hit = matches(in: lo..<hi).last { row, r in row < display || (row == display && r.location < column) }
+            var hit: (Int, NSRange)?
+            enumerate(lo..<hi, isCancelled: { false }) { row, r in
+                if row < display || (row == display && r.location < column) { hit = (row, r) }
+                return true
+            }
             if let hit { return hit }
             hi = lo
         }
         return nil
+    }
+}
+
+typealias LargeFileCancelCheck = @Sendable () -> Bool
+
+/// Runs `work` off the main thread, told to stop when the task awaiting it is cancelled. A detached task does
+/// not inherit cancellation, and `Task.isCancelled` is false on `concurrentPerform`'s worker threads, so the
+/// check is a flag any thread can read.
+func largeFileDetached<T: Sendable>(priority: TaskPriority,
+                                    _ work: @escaping @Sendable (LargeFileCancelCheck) -> T) async -> T {
+    let flag = Locked(false)
+    return await withTaskCancellationHandler {
+        await Task.detached(priority: priority) { work { flag.withLock { $0 } } }.value
+    } onCancel: {
+        flag.withLock { $0 = true }
     }
 }
 

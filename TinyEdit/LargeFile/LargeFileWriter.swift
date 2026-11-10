@@ -143,9 +143,11 @@ enum LargeFileWriter {
         guard fsync(fd) == 0 else { throw LargeFileSaveError.couldNotSave }
     }
 
-    /// Puts `tmp` in place of `url` (or at it, for a new file) under file coordination. Unless the user chose
-    /// to overwrite, a file that is no longer `expected` is left alone. Blocking.
-    static func install(_ tmp: URL, at url: URL, expected: LargeFileFingerprint?, overwrite: Bool,
+    /// Puts `tmp` in place of `url` (or at it, for a new file) under file coordination. A file that is no longer
+    /// `expected` (what was there when the save started; nil: nothing) is left alone, even when the user chose to
+    /// overwrite: that choice was for the version they were told about, not for lines written during the save.
+    /// Blocking.
+    static func install(_ tmp: URL, at url: URL, expected: LargeFileFingerprint?,
                         presenter: NSFilePresenter?) throws -> LargeFileFingerprint {
         let fm = FileManager.default
         let previous = try? fm.attributesOfItem(atPath: url.path)
@@ -155,7 +157,7 @@ enum LargeFileWriter {
             do {
                 if fm.fileExists(atPath: dest.path) {
                     let now = LargeFileFingerprint.of(path: dest.path)
-                    if !overwrite, let expected, now != expected { throw LargeFileSaveError.externalChange }
+                    if now != expected { throw LargeFileSaveError.externalChange }
                     _ = try fm.replaceItemAt(dest, withItemAt: tmp)
                 } else {
                     try fm.moveItem(at: tmp, to: dest)
