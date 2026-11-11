@@ -8,6 +8,8 @@ struct MarkdownTableTextView: NSViewRepresentable {
     let table: MarkdownTable
     let size: CGFloat
     let availableWidth: CGFloat
+    let path: String
+    @Environment(\.markdownSelection) private var selection
 
     static func canShow(_ table: MarkdownTable) -> Bool {
         !(table.header + table.rows.joined()).contains { $0.runs.contains { $0.imageURL != nil } }
@@ -18,6 +20,7 @@ struct MarkdownTableTextView: NSViewRepresentable {
     func updateNSView(_ view: MarkdownTableNSView, context: Context) {
         view.setContent(table, size: size, secondary: context.environment.markdownSecondaryText, openURL: context.environment.openURL)
         view.setAvailableWidth(availableWidth)
+        view.bindSelection(selection, path: path)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: MarkdownTableNSView, context: Context) -> CGSize? {
@@ -46,6 +49,12 @@ final class MarkdownTableNSView: NSView {
 
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
+
+    func bindSelection(_ selection: MarkdownSelection?, path: String) {
+        for (index, cell) in cells.enumerated() {
+            cell.bindSelection(selection, id: "\(path).r\(index / columns).c\(index % columns).0")
+        }
+    }
 
     func setContent(_ table: MarkdownTable, size: CGFloat, secondary: Bool, openURL: OpenURLAction) {
         if table != self.table || size != self.size || secondary != self.secondary {

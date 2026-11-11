@@ -40,20 +40,19 @@ enum MarkdownText {
     }
 }
 
-/// Preview text is drawn by a light TextKit 1 view (`MarkdownLabelView`) rather than SwiftUI `Text`
-/// or one NSTextView per block: a text view costs about a millisecond to make and attach, and a fast
-/// scroll makes dozens per frame. The block the user presses becomes a real read-only NSTextView for
-/// as long as it holds the selection, so selecting and copying work the same in every block, table
-/// cells and headings included, and a drag that starts on text is never taken as a window-background
-/// drag. Wrapping text takes the full proposed width, so a drag may start anywhere on its row.
+/// Lightweight, selectable preview text. The page's shared selection spans these views, while
+/// each label measures and draws with one TextKit 1 stack, without per-block NSTextViews.
 struct MarkdownTextView: View {
     let text: NSAttributedString
     var wraps = true
+    @Environment(\.markdownSelection) private var selection
+    @Environment(\.markdownSelectionID) private var selectionID
 
     var body: some View {
         // SwiftUI does not ask a platform view for its baseline; list markers align to this one.
-        Representable(text: text, wraps: wraps)
-            .alignmentGuide(.firstTextBaseline) { _ in Self.firstBaseline(text) }
+        let baseline = Self.firstBaseline(text)
+        return Representable(text: text, wraps: wraps, selection: selection, selectionID: selectionID)
+            .alignmentGuide(.firstTextBaseline) { _ in baseline }
     }
 
     @MainActor private static let baselineLayout = NSLayoutManager()
@@ -73,6 +72,8 @@ struct MarkdownTextView: View {
     private struct Representable: NSViewRepresentable {
         let text: NSAttributedString
         let wraps: Bool
+        let selection: MarkdownSelection?
+        let selectionID: String?
 
         func makeNSView(context: Context) -> MarkdownLabelView { MarkdownLabelView() }
 
@@ -80,6 +81,7 @@ struct MarkdownTextView: View {
             view.openURL = context.environment.openURL
             view.wraps = wraps
             view.setContent(text)
+            view.bindSelection(selection, id: selectionID)
         }
 
         func sizeThatFits(_ proposal: ProposedViewSize, nsView: MarkdownLabelView, context: Context) -> CGSize? {
@@ -88,9 +90,8 @@ struct MarkdownTextView: View {
     }
 }
 
-/// Draws one block's text with its own small layout stack and measures with the same one. It holds
-/// no selection: a press installs `MarkdownSelectableTextView` over it (same text, same width, so
-/// the same line breaks) and hands it the event; the text view goes away when it loses focus.
+/// One small layout stack for both drawing and measurement. Selection is painted behind its
+/// visible glyphs; mouse events go to the page so lazy rows share one continuous selection.
 final class MarkdownLabelView: NSView {
     var openURL: OpenURLAction?
     var wraps = true { didSet { if wraps != oldValue { contentChanged() } } }
@@ -102,10 +103,11 @@ final class MarkdownLabelView: NSView {
     private var hasLinks = false
     /// SwiftUI probes a few widths over and over (the proposal, unbounded, the last one again).
     private var sizes: [CGFloat: CGSize] = [:]
-    private var selectable: MarkdownSelectableTextView?
+    private weak var selection: MarkdownSelection?
+    private(set) var selectionID: String?
+    private var selectedRange = NSRange(location: 0, length: 0)
 
-    /// A layout manager outside a text view draws `.link` its own way, so links are drawn as a plain
-    /// color here and kept under this key; the text view gets the original string.
+    /// Draw links in the theme's color; keep the URL under a private key for hit testing.
     private static let linkKey = NSAttributedString.Key("TinyEdit.MarkdownLink")
     private static let unbounded: CGFloat = -1
 
@@ -123,6 +125,26 @@ final class MarkdownLabelView: NSView {
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { selection?.register(self) } else { selection?.unregister(self) }
+    }
+
+    func bindSelection(_ selection: MarkdownSelection?, id: String?) {
+        if self.selection !== selection || selectionID != id {
+            self.selection?.unregister(self)
+            self.selection = selection
+            selectionID = id
+        }
+        selection?.register(self)
+    }
+
+    func setSelection(_ range: NSRange) {
+        guard range != selectedRange else { return }
+        selectedRange = range
+        needsDisplay = true
+    }
+
     func setContent(_ text: NSAttributedString) {
         guard text !== self.text, !text.isEqual(to: self.text) else { return }
         self.text = text
@@ -136,7 +158,6 @@ final class MarkdownLabelView: NSView {
         }
         storage.setAttributedString(drawn)
         setAccessibilityValue(text.string)
-        removeSelectable()
         contentChanged()
     }
 
@@ -183,15 +204,24 @@ final class MarkdownLabelView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard selectable == nil, storage.length > 0 else { return }
+        guard storage.length > 0 else { return }
         layoutForBounds()
         let glyphs = layout.glyphRange(forBoundingRect: dirtyRect, in: container)
         layout.drawBackground(forGlyphRange: glyphs, at: .zero)
+        if selectedRange.length > 0, NSMaxRange(selectedRange) <= storage.length {
+            let selected = layout.glyphRange(forCharacterRange: selectedRange, actualCharacterRange: nil)
+            let visible = NSIntersectionRange(selected, glyphs)
+            if visible.length > 0 {
+                Theme.textSelection.setFill()
+                layout.enumerateEnclosingRects(forGlyphRange: visible, withinSelectedGlyphRange: selected, in: container) { rect, _ in
+                    rect.fill()
+                }
+            }
+        }
         layout.drawGlyphs(forGlyphRange: glyphs, at: .zero)
     }
 
     override func resetCursorRects() {
-        guard selectable == nil else { return }
         addCursorRect(bounds, cursor: .iBeam)
         guard hasLinks else { return }
         layoutForBounds()
@@ -207,100 +237,71 @@ final class MarkdownLabelView: NSView {
 
     // MARK: Selection
 
-    override func mouseDown(with event: NSEvent) { installSelectable().mouseDown(with: event) }
-    override func rightMouseDown(with event: NSEvent) { installSelectable().rightMouseDown(with: event) }
+    override func mouseDown(with event: NSEvent) {
+        selection?.mouseDown(in: self, event: event)
+    }
+    override func mouseDragged(with event: NSEvent) { selection?.mouseDragged(event) }
+    override func mouseUp(with event: NSEvent) { selection?.mouseUp(event) }
+    override func rightMouseDown(with event: NSEvent) {
+        if let selection { NSMenu.popUpContextMenu(selection.contextMenu(in: self, event: event), with: event, for: self) }
+    }
 
-    private func installSelectable() -> MarkdownSelectableTextView {
-        if let selectable { return selectable }
-        let view = MarkdownSelectableTextView()
-        view.wraps = wraps
-        view.openURL = openURL
-        view.setContent(text)
-        view.frame = bounds
-        view.autoresizingMask = [.width, .height]
-        view.onResign = { [weak self, weak view] in
-            // Not inside the responder change itself.
-            DispatchQueue.main.async { if let self, let view, self.selectable === view { self.removeSelectable() } }
+    var verticalScrollView: NSScrollView? {
+        var parent = superview
+        while let view = parent {
+            if let scroll = view as? NSScrollView, scroll.hasVerticalScroller { return scroll }
+            parent = view.superview
         }
-        addSubview(view)
-        selectable = view
-        needsDisplay = true
-        window?.invalidateCursorRects(for: self)
-        window?.makeFirstResponder(view)
-        return view
+        return nil
     }
 
-    private func removeSelectable() {
-        guard let view = selectable else { return }
-        selectable = nil
-        if window?.firstResponder === view { window?.makeFirstResponder(nil) }
-        view.removeFromSuperview()
-        needsDisplay = true
-        window?.invalidateCursorRects(for: self)
-    }
-}
-
-/// The real text view of the one block that holds the selection (see `MarkdownLabelView`).
-final class MarkdownSelectableTextView: NSTextView, NSTextViewDelegate {
-    var openURL: OpenURLAction?
-    var wraps = true
-    var onResign: (() -> Void)?
-
-    init() {
-        let storage = NSTextStorage()
-        let layout = NSLayoutManager()
-        storage.addLayoutManager(layout)
-        let container = NSTextContainer(size: NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
-        container.lineFragmentPadding = 0
-        layout.addTextContainer(container)
-        super.init(frame: .zero, textContainer: container)
-        // Set after init, which makes the container track the (zero) frame. The width is managed here.
-        container.widthTracksTextView = false
-        container.heightTracksTextView = false
-        isEditable = false
-        isSelectable = true
-        isRichText = true
-        drawsBackground = false
-        textContainerInset = .zero
-        isVerticallyResizable = false
-        isHorizontallyResizable = false
-        // The default maximum is the initial (zero) frame, which would clamp the container to it.
-        maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
-        isAutomaticLinkDetectionEnabled = false
-        selectedTextAttributes = [.backgroundColor: Theme.textSelection]
-        linkTextAttributes = [.foregroundColor: Theme.accent, .cursor: NSCursor.pointingHand]
-        delegate = self
+    func insertionIndex(at point: NSPoint) -> Int {
+        guard storage.length > 0 else { return 0 }
+        layoutForBounds()
+        if point.y < 0 { return 0 }
+        if point.y >= bounds.height { return storage.length }
+        var fraction: CGFloat = 0
+        let index = layout.characterIndex(for: point, in: container, fractionOfDistanceBetweenInsertionPoints: &fraction)
+        guard index < storage.length else { return storage.length }
+        let composed = (storage.string as NSString).rangeOfComposedCharacterSequence(at: index)
+        return fraction > 0.5 ? NSMaxRange(composed) : composed.location
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    override var mouseDownCanMoveWindow: Bool { false }
-
-    func setContent(_ text: NSAttributedString) {
-        guard let storage = textStorage, !storage.isEqual(to: text) else { return }
-        storage.setAttributedString(text)
+    func selection(at index: Int, granularity: MarkdownSelectionGranularity) -> NSRange {
+        guard storage.length > 0, granularity != .character else { return NSRange(location: index, length: 0) }
+        let character = min(storage.length - 1, index)
+        if granularity == .word { return storage.doubleClick(at: character) }
+        return (storage.string as NSString).paragraphRange(for: NSRange(location: character, length: 0))
     }
 
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        // Lay out at the width the label drew at; a zero frame is only AppKit's initial one.
-        guard newSize.width > 0, let container = textContainer else { return }
-        let width = wraps ? newSize.width : .greatestFiniteMagnitude
-        if container.size.width != width { container.size = NSSize(width: width, height: .greatestFiniteMagnitude) }
+    func insertionPoint(at index: Int) -> (point: NSPoint, height: CGFloat) {
+        layoutForBounds()
+        guard storage.length > 0 else { return (.zero, 15) }
+        let glyph = layout.glyphIndexForCharacter(at: min(index, storage.length - 1))
+        let line = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let rect = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+        return (NSPoint(x: index == storage.length ? rect.maxX : rect.minX, y: line.midY), line.height)
     }
 
-    /// One selection at a time: leaving a block clears what was selected in it.
-    override func resignFirstResponder() -> Bool {
-        let resigned = super.resignFirstResponder()
-        if resigned {
-            setSelectedRange(NSRange(location: selectedRange().location, length: 0))
-            onResign?()
-        }
-        return resigned
+    func visualLine(at index: Int) -> NSRange {
+        layoutForBounds()
+        guard storage.length > 0 else { return NSRange(location: 0, length: 0) }
+        let glyph = layout.glyphIndexForCharacter(at: min(index, storage.length - 1))
+        var glyphs = NSRange()
+        _ = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &glyphs)
+        var range = layout.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        if range.length > 0, (storage.string as NSString).character(at: NSMaxRange(range) - 1) == 10 { range.length -= 1 }
+        return range
     }
 
-    func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
-        if let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:)) { openURL?(url) }
-        return true
+    func link(at point: NSPoint) -> URL? {
+        guard hasLinks, storage.length > 0 else { return nil }
+        layoutForBounds()
+        let glyph = layout.glyphIndex(for: point, in: container)
+        guard glyph < layout.numberOfGlyphs,
+              layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container).contains(point) else { return nil }
+        let index = layout.characterIndexForGlyph(at: glyph)
+        let value = storage.attribute(Self.linkKey, at: index, effectiveRange: nil)
+        return (value as? URL) ?? (value as? String).flatMap(URL.init(string:))
     }
 }

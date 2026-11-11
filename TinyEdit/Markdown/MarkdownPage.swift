@@ -9,6 +9,7 @@ struct MarkdownPage: View {
     var identity: AnyHashable?
 
     @State private var headings = MarkdownHeadingRegistry()
+    @State private var selection = MarkdownSelection()
     /// Measured inside the scroll view, so a legacy vertical scroller's strip is already left out.
     @State private var contentWidth: CGFloat?
 
@@ -48,8 +49,10 @@ struct MarkdownPage: View {
             }
         }
         .environment(\.markdownHeadingRegistry, headings)
+        .environment(\.markdownSelection, selection)
+        .background { MarkdownSelectionHost(selection: selection, blocks: blocks, identity: identity) }
         .onChange(of: identity) { _, _ in headings.cancelJump() }
-        .onDisappear { headings.reset() }
+        .onDisappear { headings.reset(); selection.endDrag() }
         // The pattern belongs to the editing surface; reading stays on a plain background.
         .background(Color.editorBackground)
     }
@@ -98,6 +101,10 @@ private struct MarkdownBlockView: View {
     @Environment(\.markdownBodySize) private var bodySize
 
     var body: some View {
+        content.environment(\.markdownSelectionID, path)
+    }
+
+    @ViewBuilder private var content: some View {
         switch node {
         case .paragraph(let text):
             MarkdownInlineView(text: text, size: bodySize)
@@ -125,9 +132,9 @@ private struct MarkdownBlockView: View {
             MarkdownListView(list: list, path: path)
         case .table(let table):
             if MarkdownTableTextView.canShow(table) {
-                ScrollView(.horizontal) { MarkdownTableTextView(table: table, size: bodySize, availableWidth: availableWidth) }
+                ScrollView(.horizontal) { MarkdownTableTextView(table: table, size: bodySize, availableWidth: availableWidth, path: path) }
             } else {
-                MarkdownTableGrid(table: table)
+                MarkdownTableGrid(table: table, path: path)
             }
         case .thematicBreak:
             Divider().padding(.vertical, 4)
@@ -220,6 +227,7 @@ private struct MarkdownTaskBox: View {
 /// The table as SwiftUI views, for one that holds a picture (see `MarkdownTableTextView`).
 private struct MarkdownTableGrid: View {
     let table: MarkdownTable
+    let path: String
     @Environment(\.markdownAvailableWidth) private var availableWidth
     @Environment(\.markdownBodySize) private var bodySize
     @State private var measure = MarkdownTableMeasure()
@@ -234,14 +242,14 @@ private struct MarkdownTableGrid: View {
             Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
                 GridRow(alignment: .top) {
                     ForEach(table.columns.indices, id: \.self) { column in
-                        cell(table.header[column], column: column, width: widths[column], weight: .semibold)
+                        cell(table.header[column], row: 0, column: column, width: widths[column], weight: .semibold)
                     }
                 }
                 Divider()
                 ForEach(table.rows.indices, id: \.self) { row in
                     GridRow(alignment: .top) {
                         ForEach(table.columns.indices, id: \.self) { column in
-                            cell(table.rows[row][column], column: column, width: widths[column], weight: .regular)
+                            cell(table.rows[row][column], row: row + 1, column: column, width: widths[column], weight: .regular)
                         }
                     }
                     if row < table.rows.count - 1 { Divider().opacity(0.5) }
@@ -252,8 +260,9 @@ private struct MarkdownTableGrid: View {
         }
     }
 
-    private func cell(_ text: AttributedString, column: Int, width: CGFloat, weight: NSFont.Weight) -> some View {
+    private func cell(_ text: AttributedString, row: Int, column: Int, width: CGFloat, weight: NSFont.Weight) -> some View {
         MarkdownInlineView(text: text, size: bodySize, weight: weight, alignment: textAlignment(table.columns[column]))
+            .environment(\.markdownSelectionID, "\(path).r\(row).c\(column)")
             .environment(\.markdownAvailableWidth, width)
             .frame(width: width, alignment: alignment(table.columns[column]))
             .gridColumnAlignment(horizontalAlignment(table.columns[column]))
@@ -312,6 +321,7 @@ private struct MarkdownInlineView: View {
     var weight: NSFont.Weight = .regular
     var alignment: NSTextAlignment = .natural
     @Environment(\.markdownSecondaryText) private var secondary
+    @Environment(\.markdownSelectionID) private var selectionID
 
     /// The widest part on one line: a text's longest line, or an image's requested width (the
     /// image placeholder's width when it names none).
@@ -330,12 +340,12 @@ private struct MarkdownInlineView: View {
         let parts = MarkdownInline.parts(text)
         // Nearly every block is one run of text: no stack around it, one view fewer per block.
         if parts.count == 1, case .text(let value) = parts[0] {
-            label(value)
+            label(value, part: 0)
         } else {
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
                     switch part {
-                    case .text(let value): label(value)
+                    case .text(let value): label(value, part: index)
                     case .image(let reference): MarkdownImageView(reference: reference)
                     }
                 }
@@ -343,8 +353,9 @@ private struct MarkdownInlineView: View {
         }
     }
 
-    private func label(_ value: AttributedString) -> MarkdownTextView {
+    private func label(_ value: AttributedString, part: Int) -> some View {
         MarkdownTextView(text: MarkdownText.attributed(value,
             style: .init(size: size, weight: weight, secondary: secondary, alignment: alignment)))
+            .environment(\.markdownSelectionID, selectionID.map { "\($0).\(part)" })
     }
 }

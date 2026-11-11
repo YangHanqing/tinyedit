@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import SwiftUI
 
 /// An end-to-end run of the windows, sidebar and tab moves in the real app: `--e2e 1` builds a session (folder
 /// windows, opened files, moved tabs, a closed window) and quits through the normal Quit path; `--e2e 2`, launched
@@ -25,7 +26,7 @@ enum EndToEnd {
     static func prepare() {
         guard let phase else { return }
         let fm = FileManager.default
-        if phase == 3 || phase == 4 || phase == 5 {
+        if phase == 3 || phase == 4 || phase == 5 || phase == 7 {
             try? fm.removeItem(at: base)
             try? fm.createDirectory(at: root, withIntermediateDirectories: true)
         }
@@ -77,6 +78,7 @@ enum EndToEnd {
             switch phase {
             case 5: await phasePerfSetup()
             case 6: await phasePerf()
+            case 7: await phaseMarkdownSelection()
             case 1: await phase1()
             case 3: await phaseDiff()
             case 4: await phaseLargeSave()
@@ -87,7 +89,9 @@ enum EndToEnd {
             try? lines.joined(separator: "\n").appending("\n").write(to: report, atomically: true, encoding: .utf8)
             // From the run loop, as a menu's Quit is: a terminate inside this main-queue job would run Quit's
             // nested run loop inside it, and the main queue could not run the flush Quit waits for.
-            NSApp.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0.1)
+            if !ProcessInfo.processInfo.arguments.contains("--preview-manual") {
+                NSApp.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0.1)
+            }
         }
     }
 
@@ -513,6 +517,216 @@ enum EndToEnd {
     }
 
     // MARK: Phase 3: Compare With
+
+    /// A real, long preview, with the same scrolling workload before and after selection changes.
+    private static func phaseMarkdownSelection() async {
+        let main = Workspaces.shared.main
+        check(await wait { main.launchGateOpen && main.window != nil }, "main window up")
+        var settings = main.settings
+        settings.fontSize = 13
+        settings.markdownPreviewLayout = .split
+        settings.markdownPreviewByDefault = false
+        main.updateSettings(settings)
+        main.resetWindowSize()
+        var source = "# Selection 选择 👩🏽‍💻\n\nFirst paragraph with **bold**, `inline code` and a [link](https://example.com). "
+            + String(repeating: "Wrapping text 中文文字。 ", count: 12) + "\n\nSecond paragraph to select across.\n\n"
+        let sections = ProcessInfo.processInfo.arguments.contains("--preview-stress") ? 5000 : 120
+        for section in 0..<sections {
+            source += "## Section \(section)\n\nParagraph \(section) with English and 中文, **bold** and `code`.\n\n"
+            source += "- First item \(section)\n- Second item 👩🏽‍💻\n\n> Quoted paragraph\n>\n> Another quote\n\n"
+            source += "| Name | Value |\n| --- | --- |\n| alpha | 中文 |\n| beta | 👩🏽‍💻 |\n\n```swift\nlet value = \(section)\nprint(value)\n```\n\n"
+        }
+        check(main.newTab(), "a tab for the selection run")
+        await settle()
+        main.host.textView.insertText(source, replacementRange: NSRange(location: 0, length: 0))
+        main.setLanguage(.markdown)
+        let generation = main.host.activeStore?.generation
+        let start = CFAbsoluteTimeGetCurrent()
+        if !main.previewVisible { main.togglePreview() }
+        main.schedulePreview(delay: .zero)
+        check(await wait(15) { !main.previewBlocks.isEmpty }, "long Markdown preview parsed")
+        await settle(300)
+        _ = frame(main.window) {}
+        note("preview ready: \(ms(CFAbsoluteTimeGetCurrent() - start))")
+        func descendants<T: NSView>(_ view: NSView?, _: T.Type) -> [T] {
+            guard let view else { return [] }
+            return (view as? T).map { [$0] } ?? view.subviews.flatMap { descendants($0, T.self) }
+        }
+        guard let label = descendants(main.window?.contentView, MarkdownLabelView.self).first,
+              let scroll = sequence(first: label.superview, next: { $0?.superview }).compactMap({ $0 as? NSScrollView }).first(where: \.hasVerticalScroller),
+              let document = scroll.documentView else { return check(false, "preview scroll view found") }
+        note("initial labels: \(descendants(main.window?.contentView, MarkdownLabelView.self).count)")
+        var times: [Double] = []
+        for round in 0..<2 {
+            for step in 0..<100 {
+                let y = CGFloat(round == 0 ? step : 99 - step) * 120
+                times.append(frame(main.window) {
+                    scroll.contentView.scroll(to: NSPoint(x: 0, y: min(y, max(0, document.bounds.height - scroll.contentSize.height))))
+                    scroll.reflectScrolledClipView(scroll.contentView)
+                })
+                await settle(5)
+            }
+        }
+        times.sort()
+        note("scroll 200 frames: median \(ms(times[times.count / 2])), p95 \(ms(times[times.count * 95 / 100])), total \(ms(times.reduce(0, +)))")
+        check(main.host.activeStore?.generation == generation && main.host.activeStore?.logicalString() == source,
+              "preview scrolling leaves the editor text and generation alone")
+        if ProcessInfo.processInfo.arguments.contains("--preview-baseline") { return }
+
+        guard let responder = descendants(main.window?.contentView, MarkdownSelectionView.self).first,
+              let window = main.window else { return check(false, "preview selection responder found") }
+        let selection = responder.selection
+        func scrollTo(_ y: CGFloat) {
+            _ = frame(window) {
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
+                scroll.reflectScrolledClipView(scroll.contentView)
+            }
+        }
+        func findLabel(_ id: String) -> MarkdownLabelView? {
+            descendants(window.contentView, MarkdownLabelView.self).first { $0.selectionID == id && !$0.bounds.intersection($0.visibleRect).isEmpty }
+        }
+        func event(_ type: NSEvent.EventType, _ view: MarkdownLabelView, _ index: Int,
+                   count: Int = 1, flags: NSEvent.ModifierFlags = []) -> NSEvent {
+            let point = view.convert(view.insertionPoint(at: index).point, to: nil)
+            return NSEvent.mouseEvent(with: type, location: point, modifierFlags: flags, timestamp: 0,
+                                     windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                     clickCount: count, pressure: type == .leftMouseUp ? 0 : 1)!
+        }
+        func drag(_ a: MarkdownLabelView, _ start: Int, _ b: MarkdownLabelView, _ end: Int) {
+            a.mouseDown(with: event(.leftMouseDown, a, start))
+            a.mouseDragged(with: event(.leftMouseDragged, b, end))
+            a.mouseUp(with: event(.leftMouseUp, b, end))
+        }
+        scrollTo(0)
+        await settle(100)
+        guard let first = findLabel("1.0"), let second = findLabel("2.0"), let heading = findLabel("0.0") else {
+            return check(false, "the first paragraphs are visible")
+        }
+        let firstText = ("First paragraph with bold, inline code and a link. " + String(repeating: "Wrapping text 中文文字。 ", count: 12)).trimmingCharacters(in: .whitespacesAndNewlines)
+        let firstSelectionStart = CFAbsoluteTimeGetCurrent()
+        drag(first, 0, first, 125)
+        note("first selection: \(ms(CFAbsoluteTimeGetCurrent() - firstSelectionStart))")
+        check(selection.selectedText == (firstText as NSString).substring(to: 125), "drag across wrapped lines in one paragraph")
+        drag(first, 0, second, 16)
+        let across = firstText + "\n\nSecond paragraph"
+        check(selection.selectedText == across, "drag across paragraphs preserves the paragraph break")
+        drag(second, 16, first, 0)
+        check(selection.selectedText == across, "backward drag across paragraphs")
+        first.mouseDown(with: event(.leftMouseDown, first, 6, flags: .shift))
+        first.mouseUp(with: event(.leftMouseUp, first, 6, flags: .shift))
+        check(selection.selectedText == String(across.dropFirst(6)), "Shift-click extends from the original anchor")
+        first.mouseDown(with: event(.leftMouseDown, first, 8, count: 2))
+        first.mouseUp(with: event(.leftMouseUp, first, 8, count: 2))
+        check(selection.selectedText == "paragraph", "double-click selects a word")
+        first.mouseDown(with: event(.leftMouseDown, first, 8, count: 3))
+        first.mouseUp(with: event(.leftMouseUp, first, 8, count: 3))
+        check(selection.selectedText == firstText, "triple-click selects the paragraph")
+        first.mouseDown(with: event(.leftMouseDown, first, 0))
+        first.mouseUp(with: event(.leftMouseUp, first, 0))
+        responder.doCommand(by: NSSelectorFromString("moveToEndOfLineAndModifySelection:"))
+        let lineLength = selection.range.length
+        check(lineLength > 0 && lineLength < 125, "keyboard line selection stops at the visual wrap")
+        responder.doCommand(by: NSSelectorFromString("moveDownAndModifySelection:"))
+        check(selection.range.length > lineLength, "Shift-Down extends to the next visual line")
+        var opened: URL?
+        let originalOpenURL = first.openURL
+        first.openURL = OpenURLAction { url in opened = url; return .handled }
+        let linkIndex = (firstText as NSString).range(of: "link").location + 1
+        first.mouseDown(with: event(.leftMouseDown, first, linkIndex))
+        first.mouseUp(with: event(.leftMouseUp, first, linkIndex))
+        check(opened == URL(string: "https://example.com"), "a click still opens a link")
+        opened = nil
+        drag(first, linkIndex, second, 16)
+        check(opened == nil && selection.range.length > 16, "a drag starting on a link selects without opening it")
+        first.openURL = originalOpenURL
+        let headingText = "Selection 选择 👩🏽‍💻"
+        heading.mouseDown(with: event(.leftMouseDown, heading, (headingText as NSString).length))
+        heading.mouseUp(with: event(.leftMouseUp, heading, (headingText as NSString).length))
+        responder.doCommand(by: NSSelectorFromString("moveBackwardAndModifySelection:"))
+        check(selection.selectedText == "👩🏽‍💻", "keyboard selection keeps a composed emoji intact")
+
+        // Hold the original label while lazy scrolling replaces it, then finish in a table cell.
+        first.mouseDown(with: event(.leftMouseDown, first, 0))
+        var cell: MarkdownLabelView?
+        for y in stride(from: 150, through: 1500, by: 150) {
+            scrollTo(CGFloat(y))
+            await settle(30)
+            if let found = findLabel("7.r2.c1.0") { cell = found; break }
+        }
+        if let cell {
+            first.mouseDragged(with: event(.leftMouseDragged, cell, ("👩🏽‍💻" as NSString).length))
+            first.mouseUp(with: event(.leftMouseUp, cell, ("👩🏽‍💻" as NSString).length))
+            let copied = selection.selectedText ?? ""
+            check(copied.hasPrefix(firstText) && copied.contains("• First item 0\n• Second item 👩🏽‍💻")
+                  && copied.contains("Quoted paragraph\n\nAnother quote") && copied.hasSuffix("Name\tValue\nalpha\t中文\nbeta\t👩🏽‍💻"),
+                  "selection spans lazy rows, list items, quotes and table cells in reading order")
+        } else { selection.endDrag(); check(false, "table cell scrolls into view") }
+        check(window.firstResponder === responder, "selection keeps keyboard focus when its starting row scrolls away")
+        responder.selectAll(nil)
+        let all = selection.selectedText ?? ""
+        check(all.hasPrefix(headingText) && all.contains("let value = \(sections - 1)\nprint(value)"), "Select All includes offscreen code and the last section")
+        let board = NSPasteboard.general
+        let saved = (board.pasteboardItems ?? []).map { original -> NSPasteboardItem in
+            let item = NSPasteboardItem()
+            for type in original.types { if let data = original.data(forType: type) { item.setData(data, forType: type) } }
+            return item
+        }
+        responder.copy(nil)
+        check(board.string(forType: .string) == all, "Copy writes the entire selection without Markdown formatting syntax")
+        board.clearContents()
+        board.writeObjects(saved)
+        check(descendants(window.contentView, NSTextView.self).count == 1, "selection creates no per-block text views")
+        check(main.host.activeStore?.generation == generation && main.host.activeStore?.logicalString() == source,
+              "selecting and copying leave the editor text and generation alone")
+        // Keep dragging at the bottom edge: the stationary pointer must keep revealing more text.
+        scrollTo(0)
+        await settle(100)
+        if let start = findLabel("1.0") {
+            start.mouseDown(with: event(.leftMouseDown, start, 0))
+            let rect = scroll.convert(scroll.bounds, to: nil)
+            let point = NSPoint(x: rect.midX, y: rect.minY - 8)
+            let down = NSEvent.mouseEvent(with: .leftMouseDragged, location: point, modifierFlags: [], timestamp: 0,
+                                         windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+            start.mouseDragged(with: down)
+            let before = scroll.contentView.bounds.origin.y
+            await settle(250)
+            check(scroll.contentView.bounds.origin.y > before && selection.range.length > firstText.utf16.count,
+                  "dragging at the bottom edge scrolls and extends the selection")
+            start.mouseUp(with: down)
+            let stopped = scroll.contentView.bounds.origin.y
+            await settle(80)
+            check(scroll.contentView.bounds.origin.y == stopped, "releasing the mouse stops autoscroll")
+        }
+        snapshot(main.window, "markdown-selection")
+
+        // A fresh rendering invalidates the old ranges. Pictures split inline text into multiple
+        // labels; a table containing a picture uses the other table renderer.
+        let mixed = "# Mixed\n\nBefore ![picture](https://example.invalid/p.png) after.\n\n"
+            + "| Image | Text |\n| --- | --- |\n| ![icon](https://example.invalid/i.png) | last |\n\n"
+            + "1. [ ] todo\n2. [x] done\n\nEnd.\n"
+        main.host.textView.setSelectedRange(NSRange(location: 0, length: (source as NSString).length))
+        main.host.textView.insertText(mixed, replacementRange: main.host.textView.selectedRange())
+        main.schedulePreview(delay: .zero)
+        check(await wait {
+            if case .heading(_, let title) = main.previewBlocks.first { return String(title.characters) == "Mixed" }
+            return false
+        }, "preview updates after an edit")
+        await settle(200)
+        _ = frame(window) {}
+        check(selection.range.length == 0, "a new preview clears the previous document's selection")
+        scrollTo(0)
+        await settle(100)
+        if let before = findLabel("1.0"), let after = findLabel("1.2") {
+            drag(before, 0, after, 7)
+            let text = selection.selectedText ?? ""
+            check(text.hasPrefix("Before") && text.contains("picture") && text.hasSuffix("after."), "selection crosses an inline image")
+        } else { check(false, "text on both sides of an image is selectable") }
+        responder.selectAll(nil)
+        let fresh = selection.selectedText ?? ""
+        check(fresh.hasPrefix("Mixed\n\nBefore") && fresh.contains("Image\tText\nicon\tlast")
+              && fresh.contains("1. [ ] todo\n2. [x] done") && fresh.hasSuffix("End.") && !fresh.contains("Section"),
+              "copy order includes image tables and tasks, without text from the previous rendering")
+    }
 
     private static func phaseDiff() async {
         let main = Workspaces.shared.main
