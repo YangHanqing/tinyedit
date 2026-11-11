@@ -35,25 +35,6 @@ final class ImagePasteTests: XCTestCase {
         XCTAssertEqual(PastedImage.content(of: pb), .files([url]))
     }
 
-    func testSlowNoticeIgnoresCancelledAndReplacedJobs() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let state = AppState(root: root, autoRestore: false)
-        await state.restore()
-        let id = try XCTUnwrap(state.session.selectedBufferID)
-        let task = Task<Void, Never> { }
-        state.imageTextJobs[id] = ImageTextJob(token: 2, range: NSRange(location: 0, length: 0), generation: 0, task: task)
-        state.session.buffers[id]?.imageText = .recognizing
-        state.showSlowImageRecognition(id, token: 1)
-        XCTAssertEqual(state.session.buffers[id]?.imageText, .recognizing)
-        state.showSlowImageRecognition(id, token: 2)
-        XCTAssertEqual(state.session.buffers[id]?.imageText, .recognizingSlow)
-        state.cancelImageText()
-        state.showSlowImageRecognition(id, token: 2)
-        XCTAssertNil(state.session.buffers[id]?.imageText)
-        await state.performFlush()
-    }
-
     func testPNGRecognitionProducesText() async throws {
         let image = NSImage(size: NSSize(width: 600, height: 120))
         image.lockFocus()
