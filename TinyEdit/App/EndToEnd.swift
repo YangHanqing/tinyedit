@@ -101,6 +101,43 @@ enum EndToEnd {
         check(!main.sidebarVisible, "main window starts without the sidebar")
         snapshot(main.window, "1-main")
 
+        // Markdown Side by Side: half and half by default, the divider's strip takes the mouse, and Reset
+        // Window Size gives the standard size back.
+        var sideBySide = main.settings
+        sideBySide.markdownPreviewLayout = .split
+        main.updateSettings(sideBySide)
+        main.resetPreviewFraction()
+        check(main.newTab(), "a tab for the preview")
+        main.setLanguage(.markdown)
+        main.togglePreview()
+        check(await wait { main.previewVisible && !main.previewFull }, "the preview shows beside the editor")
+        await settle()
+        if let content = main.window?.contentView {
+            func handles(_ view: NSView) -> [NSView] { (view is PreviewHandleView ? [view] : []) + view.subviews.flatMap(handles) }
+            let found = handles(content)
+            check(found.count == 1, "one preview divider (\(found.count))")
+            if let handle = found.first {
+                let mid = handle.convert(NSPoint(x: handle.bounds.midX, y: handle.bounds.midY), to: content)
+                check(abs(mid.x - content.bounds.midX) <= 2, "the divider is in the middle (\(Int(mid.x)) of \(Int(content.bounds.width)))")
+                for dx in [-4.0, 0, 4.0] {
+                    let hit = content.hitTest(NSPoint(x: mid.x + dx, y: mid.y))
+                    check(hit is PreviewHandleView, "preview divider strip takes the mouse at x\(dx > 0 ? "+" : "")\(dx)")
+                }
+            }
+            snapshot(main.window, "1b-preview-split")
+        }
+        main.window?.setContentSize(NSSize(width: 700, height: 500))
+        main.resetWindowSize()
+        await settle(600)
+        if let window = main.window, let visible = window.screen?.visibleFrame,
+           visible.width > 1100, visible.height > 800 {
+            let size = window.contentRect(forFrameRect: window.frame).size
+            check(size == WindowSize.standard, "Reset Window Size gives the standard size (\(size))")
+            check(abs(window.frame.midX - visible.midX) <= 1, "and centers the window")
+        }
+        main.togglePreview()
+        if let id = main.session.selectedBufferID { _ = await main.closeTabAsync(id) }
+
         // A folder from Finder: a window of its own.
         ws.openURLs([fixture])
         check(await wait { ws.windows.count == 1 && ws.windows[0].folders.count == 1 }, "opening a folder makes a new window holding it")

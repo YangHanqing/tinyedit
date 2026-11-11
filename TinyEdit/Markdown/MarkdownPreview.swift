@@ -11,6 +11,7 @@ struct MarkdownPreview: View {
                      identity: appState.session.selectedBufferID)
             .environment(\.markdownDocumentURL, documentURL)
             .environment(\.markdownImageAccess, imageAccess)
+            .environment(\.markdownBodySize, MarkdownStyle.bodySize(editorFontSize: appState.settings.fontSize))
             .onChange(of: appState.session.selectedBufferID, initial: true) { _, _ in
                 imageAccess.activate(document: documentURL)
             }

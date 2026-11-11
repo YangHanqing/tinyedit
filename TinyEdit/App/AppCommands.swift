@@ -47,6 +47,8 @@ struct AppCommands: Commands {
         }
         CommandGroup(after: .windowSize) {
             Divider()
+            Button("Reset Window Size") { appState.resetWindowSize() }
+            Divider()
             Button("Main Window") { AppState.shared.showWindow() }
             Button("Move Tab to New Window") {
                 let state = appState

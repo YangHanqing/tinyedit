@@ -73,6 +73,8 @@ final class AppState {
     var folders: [WorkspaceFolder] = []
     var sidebarVisible: Bool
     var sidebarWidth: Double = WorkspaceFile.defaultSidebarWidth
+    /// The Markdown preview's share of the editor slot in Side by Side (`PreviewSplit`).
+    var previewFraction = PreviewSplit.load()
     /// The visible large-file tab's status bar; nil for an editor tab.
     var largeStatus: LargeFileStatus?
     /// Edit Lines: the sheet's text and the rows it replaces.

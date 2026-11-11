@@ -58,23 +58,33 @@ struct MarkdownPage: View {
 enum MarkdownStyle {
     static let pagePadding: CGFloat = 16
     static let quoteInset: CGFloat = 13
-    static let bodySize = NSFont.systemFontSize
-    static let codeSize: CGFloat = 12
+    /// Quick Look's body size, and the preview's at the editor's default 13 pt. A proportional face looks
+    /// smaller than the editor's monospaced one at the same size, and reading wants a little more.
+    static let defaultBodySize: CGFloat = 15
     static let blockSpacing: CGFloat = 12
     static let nestedSpacing: CGFloat = 8
 
-    static func headingSize(_ level: Int) -> CGFloat {
-        switch level {
-        case 1: 26
-        case 2: 22
-        case 3: 18
-        case 4: 15
-        default: bodySize
+    /// The preview follows the editor's font size, so Zoom In/Out and Reset Font Size scale both.
+    static func bodySize(editorFontSize: Double) -> CGFloat { CGFloat(editorFontSize) + 2 }
+    /// Code is set at the editor's own size.
+    static func codeSize(body: CGFloat) -> CGFloat { body - 2 }
+    /// How much larger than at the 13 pt the fixed list metrics were drawn for.
+    static func scale(body: CGFloat) -> CGFloat { body / 13 }
+
+    static func headingSize(_ level: Int, body: CGFloat) -> CGFloat {
+        let ratio: CGFloat = switch level {
+        case 1: 1.75
+        case 2: 1.45
+        case 3: 1.2
+        case 4: 1.05
+        default: 1
         }
+        return (body * ratio).rounded()
     }
 }
 
 extension EnvironmentValues {
+    @Entry var markdownBodySize = MarkdownStyle.defaultBodySize
     @Entry var markdownListDepth = 0
     @Entry var markdownSecondaryText = false
 }
@@ -85,13 +95,14 @@ private struct MarkdownBlockView: View {
     let path: String
     @Environment(\.markdownHeadingRegistry) private var headings
     @Environment(\.markdownAvailableWidth) private var availableWidth
+    @Environment(\.markdownBodySize) private var bodySize
 
     var body: some View {
         switch node {
         case .paragraph(let text):
-            MarkdownInlineView(text: text, size: MarkdownStyle.bodySize)
+            MarkdownInlineView(text: text, size: bodySize)
         case .heading(let level, let text):
-            let size = MarkdownStyle.headingSize(level)
+            let size = MarkdownStyle.headingSize(level, body: bodySize)
             MarkdownInlineView(text: text, size: size, weight: .bold)
                 .environment(\.markdownSecondaryText, level >= 6)
                 .padding(.top, level <= 2 ? 4 : 0)
@@ -114,7 +125,7 @@ private struct MarkdownBlockView: View {
             MarkdownListView(list: list, path: path)
         case .table(let table):
             if MarkdownTableTextView.canShow(table) {
-                ScrollView(.horizontal) { MarkdownTableTextView(table: table, availableWidth: availableWidth) }
+                ScrollView(.horizontal) { MarkdownTableTextView(table: table, size: bodySize, availableWidth: availableWidth) }
             } else {
                 MarkdownTableGrid(table: table)
             }
@@ -122,7 +133,7 @@ private struct MarkdownBlockView: View {
             Divider().padding(.vertical, 4)
         case .html(let source):
             MarkdownTextView(text: MarkdownText.plain(source,
-                font: .monospacedSystemFont(ofSize: MarkdownStyle.codeSize, weight: .regular), secondary: true))
+                font: .monospacedSystemFont(ofSize: MarkdownStyle.codeSize(body: bodySize), weight: .regular), secondary: true))
         }
     }
 }
@@ -149,24 +160,28 @@ private struct MarkdownListView: View {
     let path: String
     @Environment(\.markdownListDepth) private var depth
     @Environment(\.markdownAvailableWidth) private var availableWidth
+    @Environment(\.markdownBodySize) private var bodySize
 
     private static let spacing: CGFloat = 6
 
     var body: some View {
-        let markerWidth = list.ordered
+        let scale = MarkdownStyle.scale(body: bodySize)
+        let markerWidth = (list.ordered
             ? CGFloat(String(list.items.map(\.ordinal).max() ?? 1).count + 1) * 8
-            : 12
+            : 12) * scale
+        let boxWidth = MarkdownTaskBox.width(body: bodySize)
         VStack(alignment: .leading, spacing: 4) {
             ForEach(Array(list.items.enumerated()), id: \.offset) { index, item in
                 // What the marker column takes from the row, so the item's blocks get the exact rest.
                 let leading = markerWidth + Self.spacing
-                    + (item.task != nil && list.ordered ? MarkdownTaskBox.width + Self.spacing : 0)
+                    + (item.task != nil && list.ordered ? boxWidth + Self.spacing : 0)
                 HStack(alignment: .firstTextBaseline, spacing: Self.spacing) {
                     // A task's box replaces the bullet; an ordered task keeps its number before the box.
                     if let done = item.task, !list.ordered {
                         MarkdownTaskBox(done: done).frame(width: markerWidth, alignment: .trailing)
                     } else {
                         Text(marker(item))
+                            .font(.system(size: bodySize))
                             .monospacedDigit()
                             .frame(width: markerWidth, alignment: .trailing)
                     }
@@ -188,13 +203,15 @@ private struct MarkdownListView: View {
 
 /// Read-only: the preview shows the state, the editor changes it.
 private struct MarkdownTaskBox: View {
-    /// The symbol's width at the body size; fixed so a list knows what an ordered task's box takes.
-    static let width: CGFloat = 16
+    /// The symbol's width at the body size, so a list knows what an ordered task's box takes.
+    static func width(body: CGFloat) -> CGFloat { (16 * MarkdownStyle.scale(body: body)).rounded() }
     let done: Bool
+    @Environment(\.markdownBodySize) private var bodySize
 
     var body: some View {
         Image(systemName: done ? "checkmark.square.fill" : "square")
-            .frame(width: Self.width)
+            .font(.system(size: bodySize))
+            .frame(width: Self.width(body: bodySize))
             .foregroundStyle(done ? Color.accent : Color.textSecondary)
             .accessibilityLabel(done ? String(localized: "Task done") : String(localized: "Task open"))
     }
@@ -204,13 +221,14 @@ private struct MarkdownTaskBox: View {
 private struct MarkdownTableGrid: View {
     let table: MarkdownTable
     @Environment(\.markdownAvailableWidth) private var availableWidth
+    @Environment(\.markdownBodySize) private var bodySize
     @State private var measure = MarkdownTableMeasure()
     private static let cellPadding: CGFloat = 10
     /// Keeps the border's stroke inside the scroll view.
     private static let borderInset: CGFloat = 1
 
     var body: some View {
-        let widths = MarkdownTableLayout.widths(natural: measure.natural(table),
+        let widths = MarkdownTableLayout.widths(natural: measure.natural(table, size: bodySize),
             available: availableWidth - CGFloat(table.columns.count) * 2 * Self.cellPadding - 2 * Self.borderInset)
         ScrollView(.horizontal) {
             Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
@@ -235,7 +253,7 @@ private struct MarkdownTableGrid: View {
     }
 
     private func cell(_ text: AttributedString, column: Int, width: CGFloat, weight: NSFont.Weight) -> some View {
-        MarkdownInlineView(text: text, size: MarkdownStyle.bodySize, weight: weight, alignment: textAlignment(table.columns[column]))
+        MarkdownInlineView(text: text, size: bodySize, weight: weight, alignment: textAlignment(table.columns[column]))
             .environment(\.markdownAvailableWidth, width)
             .frame(width: width, alignment: alignment(table.columns[column]))
             .gridColumnAlignment(horizontalAlignment(table.columns[column]))
@@ -272,14 +290,16 @@ private struct MarkdownTableGrid: View {
 /// re-runs `MarkdownTableLayout` instead of measuring every cell again.
 @MainActor private final class MarkdownTableMeasure {
     private var table: MarkdownTable?
+    private var size: CGFloat = 0
     private var widths: [CGFloat] = []
 
-    func natural(_ table: MarkdownTable) -> [CGFloat] {
-        guard table != self.table else { return widths }
+    func natural(_ table: MarkdownTable, size: CGFloat) -> [CGFloat] {
+        guard table != self.table || size != self.size else { return widths }
         self.table = table
+        self.size = size
         widths = table.columns.indices.map { column in
-            table.rows.reduce(MarkdownInlineView.naturalWidth(table.header[column], size: MarkdownStyle.bodySize, weight: .semibold)) {
-                max($0, MarkdownInlineView.naturalWidth($1[column], size: MarkdownStyle.bodySize, weight: .regular))
+            table.rows.reduce(MarkdownInlineView.naturalWidth(table.header[column], size: size, weight: .semibold)) {
+                max($0, MarkdownInlineView.naturalWidth($1[column], size: size, weight: .regular))
             }
         }
         return widths

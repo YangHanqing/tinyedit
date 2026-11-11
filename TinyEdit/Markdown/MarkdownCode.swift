@@ -36,9 +36,9 @@ enum MarkdownCode {
 
     private static func key(_ code: String, hint: String?) -> NSString { "\(hint ?? "")|\(code)" as NSString }
 
-    @MainActor static func styled(_ code: String, spans: [HighlightSpan]) -> NSAttributedString {
+    @MainActor static func styled(_ code: String, spans: [HighlightSpan], size: CGFloat) -> NSAttributedString {
         let value = NSMutableAttributedString(attributedString: MarkdownText.plain(code,
-            font: .monospacedSystemFont(ofSize: 12, weight: .regular)))
+            font: .monospacedSystemFont(ofSize: size, weight: .regular)))
         for span in spans where span.range.location >= 0 && NSMaxRange(span.range) <= value.length {
             value.addAttribute(.foregroundColor, value: span.kind.color, range: span.range)
         }
@@ -51,6 +51,7 @@ struct MarkdownCodeView: View {
     let code: String
     @State private var spans: [HighlightSpan]
     @State private var copied = false
+    @Environment(\.markdownBodySize) private var bodySize
 
     init(language: String?, code: String) {
         self.language = language
@@ -78,7 +79,7 @@ struct MarkdownCodeView: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
             ScrollView(.horizontal) {
-                MarkdownTextView(text: MarkdownCode.styled(code, spans: spans), wraps: false)
+                MarkdownTextView(text: MarkdownCode.styled(code, spans: spans, size: MarkdownStyle.codeSize(body: bodySize)), wraps: false)
                     .padding(10)
             }
         }

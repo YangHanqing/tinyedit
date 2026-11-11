@@ -6,6 +6,7 @@ import SwiftUI
 /// A table holding a picture still goes through the grid (`MarkdownTableGrid`).
 struct MarkdownTableTextView: NSViewRepresentable {
     let table: MarkdownTable
+    let size: CGFloat
     let availableWidth: CGFloat
 
     static func canShow(_ table: MarkdownTable) -> Bool {
@@ -15,7 +16,7 @@ struct MarkdownTableTextView: NSViewRepresentable {
     func makeNSView(context: Context) -> MarkdownTableNSView { MarkdownTableNSView() }
 
     func updateNSView(_ view: MarkdownTableNSView, context: Context) {
-        view.setContent(table, secondary: context.environment.markdownSecondaryText, openURL: context.environment.openURL)
+        view.setContent(table, size: size, secondary: context.environment.markdownSecondaryText, openURL: context.environment.openURL)
         view.setAvailableWidth(availableWidth)
     }
 
@@ -32,6 +33,7 @@ final class MarkdownTableNSView: NSView {
     private static let borderInset: CGFloat = 1
 
     private var table: MarkdownTable?
+    private var size: CGFloat = 0
     private var secondary = false
     /// Header first, then the rows, each `columns` long.
     private var cells: [MarkdownLabelView] = []
@@ -45,9 +47,10 @@ final class MarkdownTableNSView: NSView {
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
 
-    func setContent(_ table: MarkdownTable, secondary: Bool, openURL: OpenURLAction) {
-        if table != self.table || secondary != self.secondary {
+    func setContent(_ table: MarkdownTable, size: CGFloat, secondary: Bool, openURL: OpenURLAction) {
+        if table != self.table || size != self.size || secondary != self.secondary {
             self.table = table
+            self.size = size
             self.secondary = secondary
             columns = table.columns.count
             let texts = [table.header] + table.rows
@@ -62,7 +65,7 @@ final class MarkdownTableNSView: NSView {
             for (row, values) in texts.enumerated() {
                 for column in 0..<columns {
                     let cell = cells[row * columns + column]
-                    cell.setContent(MarkdownText.attributed(values[column], style: .init(size: MarkdownStyle.bodySize,
+                    cell.setContent(MarkdownText.attributed(values[column], style: .init(size: size,
                         weight: row == 0 ? .semibold : .regular, secondary: secondary, alignment: alignment(table.columns[column]))))
                     natural[column] = max(natural[column], cell.fittingSize(width: nil).width)
                 }

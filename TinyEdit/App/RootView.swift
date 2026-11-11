@@ -3,6 +3,8 @@ import UniformTypeIdentifiers
 
 struct RootView: View {
     @Environment(AppState.self) private var appState
+    /// The editor slot's width, for the editor/preview split.
+    @State private var slotWidth = 0.0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -74,7 +76,8 @@ struct RootView: View {
     /// scroll view, and SwiftUI would update the outgoing one last with its old store: leaving a tab with the
     /// preview open would put the previous buffer back in the text view, and typing would go into it.
     private var editorSlot: some View {
-        HSplitView {
+        let split = appState.previewVisible && !appState.previewFull
+        return HStack(spacing: 0) {
             EditorView(host: appState.host,
                        store: appState.editorHostStore,
                        allStores: appState.allStores,
@@ -92,11 +95,15 @@ struct RootView: View {
                         SuggestionCard()
                     }
                 }
-                .frame(minWidth: SidebarLayout.paneMinWidth)
-            if appState.previewVisible && !appState.previewFull {
-                MarkdownPreview().frame(minWidth: SidebarLayout.paneMinWidth)
+                .frame(width: split && slotWidth > 0 ? PreviewSplit.editorWidth(slot: slotWidth, fraction: appState.previewFraction) : nil)
+            if split {
+                // Above the panes, so the drag strip that lies over their edges takes the mouse.
+                PreviewDivider(slotWidth: slotWidth).zIndex(1)
+                MarkdownPreview().frame(maxWidth: .infinity)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { slotWidth = $0 }
         // Preview Only covers the editor rather than replacing it, so the one EditorView stays.
         .overlay {
             if appState.previewFull { MarkdownPreview() }

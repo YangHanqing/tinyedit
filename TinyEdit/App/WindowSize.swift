@@ -22,7 +22,26 @@ enum WindowSize {
         return CGSize(width: max(size.width, minimum.width).rounded(), height: max(size.height, minimum.height).rounded())
     }
 
+    static func reset(in defaults: UserDefaults = .standard) { defaults.removeObject(forKey: storageKey) }
+
     static func save(_ size: CGSize, to defaults: UserDefaults = .standard) {
         defaults.set([Double(size.width.rounded()), Double(size.height.rounded())], forKey: storageKey)
+    }
+}
+
+extension AppState {
+    /// Window ▸ Reset Window Size: the standard size (no larger than the screen), centered, with the stored size
+    /// forgotten and the Markdown preview back to half. Full screen is left alone but still forgets the size.
+    func resetWindowSize() {
+        WindowSize.reset()
+        resetPreviewFraction()
+        guard let window, !window.styleMask.contains(.fullScreen),
+              let visible = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
+        let content = WindowSize.load(visible: visible.size)
+        var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: content))
+        frame.size.width = min(frame.width, visible.width)
+        frame.size.height = min(frame.height, visible.height)
+        frame.origin = NSPoint(x: (visible.midX - frame.width / 2).rounded(), y: (visible.midY - frame.height / 2).rounded())
+        window.setFrame(frame, display: true, animate: true)
     }
 }
