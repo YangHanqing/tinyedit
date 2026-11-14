@@ -497,7 +497,7 @@ final class AppState {
                                                 location: store.viewState.selection.location,
                                                 index: store.lineIndex.flatMap { $0.generation == store.generation ? $0 : nil })
         let reduced = highlightReduced && buffer.language != .plain
-        let label = reduced ? String(localized: "Plain Text (reduced)") : buffer.language.statusLabel
+        let label = reduced ? String(localized: "\(buffer.language.statusLabel) (highlighting paused)") : buffer.language.statusLabel
         let automatic = automaticIndentStyle(store, language: buffer.language)
         let new = EditorStatus(line: line, column: column, encoding: buffer.encoding, lineEnding: buffer.lineEnding,
                                indent: store.indentOverride ?? automatic, automaticIndent: automatic,

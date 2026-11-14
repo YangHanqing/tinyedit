@@ -1989,54 +1989,54 @@
         }
       }
     },
-    "Plain Text (reduced)": {
+    "%@ (highlighting paused)": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Plain Text (reduced)"
+            "value": "%@ (highlighting paused)"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "纯文本（已精简）"
+            "value": "%@（高亮已暂停）"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "純文字（已精簡）"
+            "value": "%@（語法標示已暫停）"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "標準テキスト（縮小）"
+            "value": "%@（ハイライト停止中）"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "일반 텍스트 (축소)"
+            "value": "%@ (구문 강조 일시 중지)"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reiner Text (reduziert)"
+            "value": "%@ (Hervorhebung pausiert)"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Texte brut (réduit)"
+            "value": "%@ (coloration en pause)"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Texto sin formato (reducido)"
+            "value": "%@ (resaltado en pausa)"
           }
         }
       }

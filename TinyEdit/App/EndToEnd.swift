@@ -26,7 +26,7 @@ enum EndToEnd {
     static func prepare() {
         guard let phase else { return }
         let fm = FileManager.default
-        if phase == 3 || phase == 4 || phase == 5 || phase == 7 {
+        if phase == 3 || phase == 4 || phase == 5 || phase == 7 || phase == 8 {
             try? fm.removeItem(at: base)
             try? fm.createDirectory(at: root, withIntermediateDirectories: true)
         }
@@ -73,12 +73,14 @@ enum EndToEnd {
     static func run() {
         guard let phase else { return }
         if phase == 6 { watchLaunch() }
+        if phase == 8 { watchLargeFileOpen() }
         Task {
             await settle(600)
             switch phase {
             case 5: await phasePerfSetup()
             case 6: await phasePerf()
             case 7: await phaseMarkdownSelection()
+            case 8: await phaseMinifiedJSON()
             case 1: await phase1()
             case 3: await phaseDiff()
             case 4: await phaseLargeSave()
@@ -334,6 +336,102 @@ enum EndToEnd {
         if let id = main.session.orderedBuffers.first(where: { main.stores[$0.id]?.logicalString() == "draft from a closed window" })?.id {
             main.removeBuffer(id)
         }
+    }
+
+    // MARK: Phase 8: One 25 MB JSON line
+
+    private static func watchLargeFileOpen() {
+        Task {
+            let main = Workspaces.shared.main
+            var selected = false
+            while true {
+                if let doc = main.activeLargeFile {
+                    if !selected {
+                        note("process start to selected file tab: \(ms(sinceProcessStart()))")
+                        selected = true
+                    }
+                    if doc.progress.complete {
+                        note("process start to indexed file: \(ms(sinceProcessStart()))")
+                        return
+                    }
+                }
+                if sinceProcessStart() > 20 { return }
+                await settle(2)
+            }
+        }
+    }
+
+    private static func phaseMinifiedJSON() async {
+        let main = Workspaces.shared.main
+        check(await wait { main.launchGateOpen && main.window != nil }, "main window up")
+        let fromFinder = ProcessInfo.processInfo.arguments.contains("--finder-open")
+        let url = base.appendingPathComponent("minified.json")
+        let bytes = fromFinder ? 0 : await Task.detached(priority: .userInitiated) {
+            // Mixed scripts, escapes, numbers and URLs, as in a server response. No physical line breaks.
+            let item = #"{"id":1234567890123456789,"name":"中文 café 😀","url":"https://example.invalid/a?b=1","value":1.234e-10,"text":"line\nnext"}"#
+            let count = 25 * 1_048_576 / (item.utf8.count + 1)
+            let data = Data(("[" + Array(repeating: item, count: count).joined(separator: ",") + "]").utf8)
+            try? data.write(to: url)
+            return data.count
+        }.value
+        let start = CFAbsoluteTimeGetCurrent()
+        if fromFinder {
+            // Pass a file with `open -n -W -a …app file.json --args --e2e 8 --finder-open`.
+            // This exercises Launch Services, the sandbox grant and AppDelegate's open-URL callback.
+            check(await wait { main.activeLargeFile != nil }, "Finder open selects a large-file tab")
+            note("Finder open, process age at check: \(ms(sinceProcessStart()))")
+        } else {
+            await main.openURLsAsync([url])
+            note("open to selected tab: \(ms(CFAbsoluteTimeGetCurrent() - start)); \(bytes) bytes")
+        }
+        guard let doc = main.activeLargeFile else { return check(false, "automatic open uses the large-file view") }
+        note("file bytes: \(doc.fileSize)")
+        check(main.activeStore == nil, "no whole-document text store or TextKit layout")
+        check(await wait { doc.progress.complete }, "index completes")
+        if !fromFinder { note("open to indexed: \(ms(CFAbsoluteTimeGetCurrent() - start))") }
+        check(doc.progress.lines == 1 && doc.baseRows > 1000, "one physical line is drawn in bounded pieces")
+        await settle(100)
+        var times: [Double] = []
+        for i in 0..<200 {
+            times.append(frame(main.window) {
+                doc.topRow = Double(i) * doc.maxTopRow() / 199
+                main.largeView.refresh()
+            })
+            // Keep handling input between frames: a synchronous 200-frame benchmark itself hangs the UI.
+            await settle(1)
+        }
+        let sorted = times.sorted()
+        note("200 scroll frames: median \(ms(sorted[100])), p95 \(ms(sorted[190])), max \(ms(sorted[199]))")
+        if let first = doc.visibleRow(0)?.text, first.utf8.allSatisfy({ $0 >= 0x20 && $0 <= 0x7E }),
+           let window = main.window {
+            let view = main.largeView
+            let cw = (" " as NSString).size(withAttributes: [.font: EditorConfiguration.font(size: main.settings.fontSize)]).width
+            let gutter = CGFloat(max(String(doc.progress.lines).count, 3)) * cw + 20
+            // Select text in the real view, including far beyond the first shaped slice. The exact
+            // bytes returned by Copy/Edit must still be those under the pointer after scrolling.
+            for column in [0, 1024, 10_000] {
+                _ = frame(window) {
+                    doc.topRow = 0
+                    doc.xOffset = CGFloat(column) * cw
+                    view.refresh()
+                }
+                func event(_ type: NSEvent.EventType, _ x: CGFloat) -> NSEvent {
+                    let point = view.convert(NSPoint(x: gutter + 8 + x * cw, y: 8), to: nil)
+                    return NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
+                                              windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                              clickCount: 1, pressure: 1)!
+                }
+                view.mouseDown(with: event(.leftMouseDown, 3.25))
+                view.mouseDragged(with: event(.leftMouseDragged, 15.25))
+                view.mouseUp(with: event(.leftMouseUp, 15.25))
+                check(doc.anchor == LargeFilePosition(row: 0, column: column + 3)
+                      && doc.head == LargeFilePosition(row: 0, column: column + 15)
+                      && doc.selectedText() == (first as NSString).substring(with: NSRange(location: column + 3, length: 12)),
+                      "mouse selection returns the original text at horizontal column \(column)")
+            }
+        }
+        if !fromFinder { snapshot(main.window, "minified-json") }
+        check(!main.isDirtyNow(doc.id) && doc.edits.isEmpty, "opening and scrolling leave the file unedited")
     }
 
     // MARK: Phase 4: Saving a large file the sandbox grants alone

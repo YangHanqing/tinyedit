@@ -106,6 +106,15 @@ extension AppState {
                     if await Workspaces.shared.moveTab(id, to: self, select: false) { existing = existing ?? id }
                     continue
                 }
+                // The initial size lookup may fail, or the file may grow while being read. Decide again
+                // from the bytes actually loaded, before a giant paragraph reaches TextKit.
+                if mode == .automatic, loaded.byteSize > LargeFilePolicy.threshold {
+                    if let id = await openLargeURL(url, started: started) {
+                        firstNew = firstNew ?? id
+                        opened += 1
+                    }
+                    continue
+                }
                 let bookmark = try access.bookmark(for: url)
                 var b = EditorBuffer(title: url.lastPathComponent)
                 b.fileBookmark = bookmark

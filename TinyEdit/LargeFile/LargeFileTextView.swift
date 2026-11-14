@@ -33,6 +33,9 @@ final class LargeFileTextView: NSView, NSMenuItemValidation {
         var row: LargeFileVisibleRow
         var matches: [NSRange]
         var width: CGFloat
+        /// Printable ASCII in the editor's monospaced font needs shaping only across the viewport.
+        var fixedPitch: Bool
+        var shapedRange: NSRange
     }
 
     private enum Drag {
@@ -51,7 +54,6 @@ final class LargeFileTextView: NSView, NSMenuItemValidation {
 
     private static let scrollerSize: CGFloat = 10
     private static let textInset: CGFloat = 8
-    /// Only this much of a row is laid out at a time (a row holds at most 16 KB, so this covers it).
     private var fontSize = 0.0
     private var tabWidth = 0
     private var font = EditorConfiguration.font(size: EditorSettings.defaultFontSize)
@@ -159,39 +161,59 @@ final class LargeFileTextView: NSView, NSMenuItemValidation {
     // MARK: Lines
 
     private func cachedLine(_ visual: Int, _ doc: LargeFileDocument) -> CachedLine? {
-        if let c = lineCache[visual] { return c }
-        guard let row = doc.visibleRow(visual) else { return nil }
+        let cached = lineCache[visual]
+        if let c = cached, !c.fixedPitch || c.shapedRange == asciiViewportRange(length: (c.row.text as NSString).length, doc) {
+            return c
+        }
+        guard let row = cached?.row ?? doc.visibleRow(visual) else { return nil }
         // Theme colors resolve against the view's appearance, also when a click lays out a line outside drawing.
         var made: CachedLine?
-        effectiveAppearance.performAsCurrentDrawingAppearance { made = makeLine(row, doc) }
+        effectiveAppearance.performAsCurrentDrawingAppearance { made = makeLine(row, doc, fixedPitch: cached?.fixedPitch) }
         guard let c = made else { return nil }
         if lineCache.count > 400 { lineCache.removeAll() }
         lineCache[visual] = c
         return c
     }
 
-    private func makeLine(_ row: LargeFileVisibleRow, _ doc: LargeFileDocument) -> CachedLine {
+    private func asciiViewportRange(length: Int, _ doc: LargeFileDocument) -> NSRange {
+        // A little overscan, in blocks, avoids reshaping on every horizontal scroll event.
+        let start = min(max(Int(doc.xOffset / charWidth) - 32, 0) / 256 * 256, length)
+        let count = Int(ceil(bounds.width / charWidth)) + 512
+        return NSRange(location: start, length: min(count, length - start))
+    }
+
+    private func makeLine(_ row: LargeFileVisibleRow, _ doc: LargeFileDocument, fixedPitch known: Bool? = nil) -> CachedLine {
         let text = row.text as NSString
-        let attributed = NSMutableAttributedString(string: row.text, attributes: [
+        // Server JSON often escapes every non-ASCII character. Shaping 16 KB per visible row spent
+        // most of each scroll frame on text far outside the clip. Unicode, tabs and controls still
+        // use CoreText's full layout so bidi, combining characters and tab stops remain exact.
+        let fixedPitch = known ?? (text.length > 1024 && row.text.utf8.allSatisfy { $0 >= 0x20 && $0 <= 0x7E })
+        let range = fixedPitch ? asciiViewportRange(length: text.length, doc) : NSRange(location: 0, length: text.length)
+        let attributed = NSMutableAttributedString(string: text.substring(with: range), attributes: [
             .font: font,
             NSAttributedString.Key(kCTForegroundColorAttributeName as String): Theme.textPrimary.cgColor,
         ])
+        if fixedPitch { attributed.addAttribute(.ligature, value: 0, range: NSRange(location: 0, length: attributed.length)) }
         if let paragraph {
             attributed.addAttribute(NSAttributedString.Key(kCTParagraphStyleAttributeName as String), value: paragraph,
-                                    range: NSRange(location: 0, length: text.length))
+                                    range: NSRange(location: 0, length: attributed.length))
         }
-        if let (range, color) = LogLevel.find(in: text) {
-            attributed.addAttribute(NSAttributedString.Key(kCTForegroundColorAttributeName as String), value: color.cgColor, range: range)
+        if let (level, color) = LogLevel.find(in: text) {
+            let visible = NSIntersectionRange(level, range)
+            if visible.length > 0 {
+                attributed.addAttribute(NSAttributedString.Key(kCTForegroundColorAttributeName as String), value: color.cgColor,
+                                        range: NSRange(location: visible.location - range.location, length: visible.length))
+            }
         }
         let line = CTLineCreateWithAttributedString(attributed)
-        let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        let width = fixedPitch ? CGFloat(text.length) * charWidth : CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
         widest = max(widest, width)
         let matches = doc.highlightsMatches ? (doc.query?.ranges(in: row.text) ?? []) : []
-        return CachedLine(line: line, row: row, matches: matches, width: width)
+        return CachedLine(line: line, row: row, matches: matches, width: width, fixedPitch: fixedPitch, shapedRange: range)
     }
 
     private func x(_ column: Int, _ c: CachedLine) -> CGFloat {
-        column <= 0 ? 0 : CTLineGetOffsetForStringIndex(c.line, column, nil)
+        column <= 0 ? 0 : c.fixedPitch ? CGFloat(column) * charWidth : CTLineGetOffsetForStringIndex(c.line, column, nil)
     }
 
     // MARK: Drawing
@@ -242,7 +264,7 @@ final class LargeFileTextView: NSView, NSMenuItemValidation {
             ctx.saveGState()
             ctx.clip(to: CGRect(x: gutter, y: y, width: bounds.width - gutter, height: lineHeight))
             ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
-            ctx.textPosition = CGPoint(x: left, y: y + baseline)
+            ctx.textPosition = CGPoint(x: left + (c.fixedPitch ? CGFloat(c.shapedRange.location) * charWidth : 0), y: y + baseline)
             CTLineDraw(c.line, ctx)
             ctx.restoreGState()
 
@@ -277,7 +299,7 @@ final class LargeFileTextView: NSView, NSMenuItemValidation {
         let x = p.x - textX + doc.xOffset
         guard x > 0 else { return LargeFilePosition(row: row, column: 0) }
         let length = (c.row.text as NSString).length
-        let index = CTLineGetStringIndexForPosition(c.line, CGPoint(x: x, y: 0))
+        let index = c.fixedPitch ? Int((x / charWidth).rounded()) : CTLineGetStringIndexForPosition(c.line, CGPoint(x: x, y: 0))
         return LargeFilePosition(row: row, column: min(max(index == kCFNotFound ? length : index, 0), length))
     }
 
