@@ -240,6 +240,7 @@ extension AppState {
         guard let id = session.selectedBufferID, let b = session.buffers[id], b.language == .markdown else { return }
         let visible = !previewVisible  // read before the write: an optional-chain assignment evaluates it inside the access
         session.buffers[id]?.markdownPreviewVisible = visible
+        if !visible { previewReader.closeFind(focus: false) }
         schedulePreview(delay: .zero)
         flushImmediately()
     }
@@ -267,7 +268,7 @@ extension AppState {
         updateSettings(s)
     }
 
-    /// Find, Go to Line and the line commands act on the text, so they bring the editor back first.
+    /// Replace, Go to Line and line commands act on the source, so they bring the editor back first.
     func leaveFullPreview() {
         guard previewFull else { return }
         togglePreview()
@@ -299,6 +300,7 @@ extension AppState {
             let gen = store.generation
             let text = store.logicalString()
             if text.utf8.count > HighlightPolicy.offLimit {
+                self.previewReader.setDocument([], identity: id)
                 self.previewBlocks = []
                 self.previewMessage = String(localized: "Preview unavailable")
                 return
@@ -306,9 +308,11 @@ extension AppState {
             let parsed: [MarkdownNode]? = await Task.detached(priority: .utility) { try? MarkdownDocument.parse(text) }.value
             guard !Task.isCancelled, store.generation == gen, self.session.selectedBufferID == id else { return }
             if let parsed {
+                self.previewReader.setDocument(parsed, identity: id)
                 self.previewBlocks = parsed
                 self.previewMessage = nil
             } else {
+                self.previewReader.setDocument([], identity: id)
                 self.previewBlocks = []
                 self.previewMessage = String(localized: "Preview unavailable")
                 Log.editor.error("markdown preview parse failed")

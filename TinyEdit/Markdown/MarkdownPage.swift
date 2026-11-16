@@ -7,9 +7,12 @@ struct MarkdownPage: View {
     var message: String?
     /// A new value starts a new scroll position and drops a pending heading jump.
     var identity: AnyHashable?
+    var reader: MarkdownReader?
 
     @State private var headings = MarkdownHeadingRegistry()
-    @State private var selection = MarkdownSelection()
+    @State private var localReader = MarkdownReader()
+    @Environment(\.markdownOpenDocument) private var openDocument
+    private var reading: MarkdownReader { reader ?? localReader }
     /// Measured inside the scroll view, so a legacy vertical scroller's strip is already left out.
     @State private var contentWidth: CGFloat?
 
@@ -20,7 +23,7 @@ struct MarkdownPage: View {
                     Text(message).foregroundStyle(.secondary).padding()
                 } else {
                     LazyVStack(alignment: .leading, spacing: MarkdownStyle.blockSpacing) {
-                        ForEach(Array(blocks.enumerated()), id: \.offset) { index, node in
+                        ForEach(Array(blocks.enumerated()).filter { !reading.hiddenPaths.contains("\($0.offset)") }, id: \.offset) { index, node in
                             MarkdownBlockView(node: node, path: "\(index)")
                                 .id("top-\(index)")
                         }
@@ -33,26 +36,34 @@ struct MarkdownPage: View {
             .id(identity)
             .environment(\.openURL, OpenURLAction { url in
                 if url.relativeString.hasPrefix("#") {
-                    let navigation = MarkdownNavigation(blocks)
-                    if let target = navigation.target(for: url) {
-                        if !headings.canLocate(target.path) {
-                            proxy.scrollTo("top-\(target.topLevel)", anchor: .top)
-                        }
-                        headings.jump(to: target.path)
-                    }
+                    reading.navigate(fragment: String(url.relativeString.dropFirst()))
+                    return .handled
+                }
+                if url.isFileURL || (url.scheme == nil && !url.relativeString.hasPrefix("//")) {
+                    openDocument?(url)
                     return .handled
                 }
                 return ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") ? .systemAction : .discarded
             })
+            .onChange(of: reading.jump) { _, jump in
+                guard let jump else { return }
+                let located = jump.search ? reading.selection.canLocate(block: jump.path) : headings.canLocate(jump.path)
+                if !located {
+                    proxy.scrollTo("top-\(jump.topLevel)", anchor: jump.search ? .center : .top)
+                }
+                if jump.search { reading.finishSearchJump() }
+                else { headings.jump(to: jump.path) }
+            }
             .transformEnvironment(\.markdownAvailableWidth) { width in
                 if let contentWidth { width = max(1, contentWidth - 2 * MarkdownStyle.pagePadding) }
             }
         }
         .environment(\.markdownHeadingRegistry, headings)
-        .environment(\.markdownSelection, selection)
-        .background { MarkdownSelectionHost(selection: selection, blocks: blocks, identity: identity) }
+        .environment(\.markdownReader, reading)
+        .environment(\.markdownSelection, reading.selection)
+        .background { MarkdownSelectionHost(reader: reading, blocks: blocks, identity: identity, managesDocument: reader == nil) }
         .onChange(of: identity) { _, _ in headings.cancelJump() }
-        .onDisappear { headings.reset(); selection.endDrag() }
+        .onDisappear { headings.reset(); reading.selection.endDrag() }
         // The pattern belongs to the editing surface; reading stays on a plain background.
         .background(Color.editorBackground)
     }
@@ -97,6 +108,7 @@ private struct MarkdownBlockView: View {
     let node: MarkdownNode
     let path: String
     @Environment(\.markdownHeadingRegistry) private var headings
+    @Environment(\.markdownReader) private var reader
     @Environment(\.markdownAvailableWidth) private var availableWidth
     @Environment(\.markdownBodySize) private var bodySize
 
@@ -113,9 +125,23 @@ private struct MarkdownBlockView: View {
             MarkdownInlineView(text: text, size: size, weight: .bold)
                 .environment(\.markdownSecondaryText, level >= 6)
                 .padding(.top, level <= 2 ? 4 : 0)
-                // Zero-sized, so the anchor can never sit over the heading's text and take its clicks.
                 .background(alignment: .topLeading) {
                     MarkdownHeadingAnchor(path: path, registry: headings).frame(width: 0, height: 0)
+                }
+                .overlay(alignment: .topLeading) {
+                    if let reader, let heading = reader.headingByPath[path], heading.canFold {
+                        Button { reader.toggleFold(heading) } label: {
+                            Image(systemName: reader.collapsed.contains(heading.id) ? "chevron.right" : "chevron.down")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Color.textTertiary)
+                                .frame(width: 14, height: size * 1.2)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .offset(x: -15)
+                        .toolTip(reader.collapsed.contains(heading.id) ? String(localized: "Expand Section") : String(localized: "Collapse Section"))
+                        .accessibilityLabel(reader.collapsed.contains(heading.id) ? String(localized: "Expand Section") : String(localized: "Collapse Section"))
+                    }
                 }
         case .codeBlock(let language, let code):
             MarkdownCodeView(language: language, code: code)
@@ -148,14 +174,17 @@ private struct MarkdownBlockView: View {
 private struct MarkdownBlockStack: View {
     let blocks: [MarkdownNode]
     let path: String
+    @Environment(\.markdownReader) private var reader
 
     var body: some View {
-        if blocks.count == 1 {
+        if blocks.count == 1, reader?.hiddenPaths.contains("\(path).0") != true {
             MarkdownBlockView(node: blocks[0], path: "\(path).0")
         } else {
             VStack(alignment: .leading, spacing: MarkdownStyle.nestedSpacing) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { index, node in
-                    MarkdownBlockView(node: node, path: "\(path).\(index)")
+                    if reader?.hiddenPaths.contains("\(path).\(index)") != true {
+                        MarkdownBlockView(node: node, path: "\(path).\(index)")
+                    }
                 }
             }
         }

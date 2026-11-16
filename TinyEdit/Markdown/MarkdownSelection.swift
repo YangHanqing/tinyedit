@@ -5,19 +5,29 @@ import SwiftUI
 /// off-main once per document revision. The NSString is copied to an immutable value before it is
 /// shared; neither it nor the range dictionary is ever mutated afterwards.
 struct MarkdownSelectionDocument: @unchecked Sendable {
+    struct Leaf {
+        let id: String
+        let range: NSRange
+        let blockPath: String
+    }
     let text: NSString
     let ranges: [String: NSRange]
+    let orderedRanges: [Leaf]
+    let structure: MarkdownStructure
 
     init(_ blocks: [MarkdownNode]) {
         let builder = Builder()
         builder.blocks(blocks, prefix: "")
         text = builder.text.copy() as! NSString
         ranges = builder.ranges
+        orderedRanges = builder.orderedRanges
+        structure = MarkdownStructure(blocks)
     }
 
     private final class Builder {
         let text = NSMutableString(capacity: 0)
         var ranges: [String: NSRange] = [:]
+        var orderedRanges: [Leaf] = []
 
         func blocks(_ nodes: [MarkdownNode], prefix: String) {
             for (index, node) in nodes.enumerated() {
@@ -27,17 +37,19 @@ struct MarkdownSelectionDocument: @unchecked Sendable {
             }
         }
 
-        func leaf(_ value: String, id: String) {
+        func leaf(_ value: String, id: String, blockPath: String? = nil) {
             let start = text.length
             text.append(value)
-            ranges[id] = NSRange(location: start, length: text.length - start)
+            let range = NSRange(location: start, length: text.length - start)
+            ranges[id] = range
+            orderedRanges.append(Leaf(id: id, range: range, blockPath: blockPath ?? id))
         }
 
-        func inline(_ value: AttributedString, path: String) {
+        func inline(_ value: AttributedString, path: String, blockPath: String? = nil) {
             for (index, part) in MarkdownInline.parts(value).enumerated() {
                 if index > 0 { text.append("\n") }
                 switch part {
-                case .text(let value): leaf(String(value.characters), id: "\(path).\(index)")
+                case .text(let value): leaf(String(value.characters), id: "\(path).\(index)", blockPath: blockPath ?? path)
                 case .image(let image): text.append(image.alt == "\u{fffc}" ? "" : image.alt)
                 }
             }
@@ -61,7 +73,7 @@ struct MarkdownSelectionDocument: @unchecked Sendable {
                     if row > 0 { text.append("\n") }
                     for (column, cell) in cells.enumerated() {
                         if column > 0 { text.append("\t") }
-                        inline(cell, path: "\(path).r\(row).c\(column)")
+                        inline(cell, path: "\(path).r\(row).c\(column)", blockPath: path)
                     }
                 }
             case .thematicBreak: break
@@ -80,6 +92,7 @@ extension EnvironmentValues {
 /// One selection per page. Dragging touches only attached labels, without observable state,
 /// attributed-string changes, text-view creation, or any SwiftUI layout invalidation.
 @MainActor final class MarkdownSelection {
+    var onDocumentReady: ((MarkdownSelectionDocument) -> Void)?
     private struct Label { weak var view: MarkdownLabelView? }
     private var labels: [ObjectIdentifier: Label] = [:]
     private var blocks: [MarkdownNode] = []
@@ -99,14 +112,31 @@ extension EnvironmentValues {
     private var pendingLink: (() -> Void)?
     private weak var dragScroll: NSScrollView?
     private var scrollTimer: Timer?
+    private var searchMatches: [NSRange] = []
+    private var currentSearchMatch: NSRange?
+    private var pendingSearchReveal: (id: String, range: NSRange)?
 
-    func setDocument(_ blocks: [MarkdownNode], identity: AnyHashable?) {
-        guard identity != self.identity || blocks != self.blocks else { return }
+    func invalidateDocument() {
+        indexing?.cancel()
+        indexing = nil
+        revision += 1
+        blocks = []
+        identity = nil
+        document = nil
+        navigationText = nil
+        clearSelection()
+        setSearchMatches([], current: nil)
+    }
+
+    @discardableResult
+    func setDocument(_ blocks: [MarkdownNode], identity: AnyHashable?) -> Bool {
+        guard identity != self.identity || blocks != self.blocks || document == nil && indexing == nil else { return false }
         endDrag()
         setRange(NSRange(location: 0, length: 0))
         self.blocks = blocks
         self.identity = identity
         document = nil
+        setSearchMatches([], current: nil)
         navigationText = nil
         anchor = NSRange(location: 0, length: 0)
         head = 0
@@ -122,7 +152,9 @@ extension EnvironmentValues {
         Task { [weak self] in
             guard let value = await task.value, let self, self.revision == revision else { return }
             self.document = value
+            self.onDocumentReady?(value)
         }
+        return true
     }
 
     deinit { indexing?.cancel() }
@@ -134,6 +166,7 @@ extension EnvironmentValues {
         indexing?.cancel()
         let value = MarkdownSelectionDocument(blocks)
         document = value
+        onDocumentReady?(value)
         return value
     }
 
@@ -146,6 +179,7 @@ extension EnvironmentValues {
         guard view.window != nil else { return }
         labels[ObjectIdentifier(view)] = Label(view: view)
         refresh(view)
+        finishSearchReveal(in: view)
     }
 
     func unregister(_ view: MarkdownLabelView) { labels.removeValue(forKey: ObjectIdentifier(view)) }
@@ -157,6 +191,62 @@ extension EnvironmentValues {
             if intersection.length > 0 { local = NSRange(location: intersection.location - leaf.location, length: intersection.length) }
         }
         view.setSelection(local)
+        var highlights: [NSRange] = []
+        var current: NSRange?
+        if let id = view.selectionID, let leaf = document?.ranges[id] {
+            var lo = 0, hi = searchMatches.count
+            while lo < hi {
+                let mid = (lo + hi) / 2
+                if NSMaxRange(searchMatches[mid]) <= leaf.location { lo = mid + 1 } else { hi = mid }
+            }
+            for match in searchMatches.dropFirst(lo) {
+                if match.location >= NSMaxRange(leaf) { break }
+                let overlap = NSIntersectionRange(match, leaf)
+                if overlap.length > 0 {
+                    let range = NSRange(location: overlap.location - leaf.location, length: overlap.length)
+                    highlights.append(range)
+                    if match == currentSearchMatch { current = range }
+                }
+            }
+        }
+        view.setSearchHighlights(highlights, current: current)
+    }
+
+    func clearSelection() { endDrag(); setRange(NSRange(location: 0, length: 0)) }
+
+    func setSearchMatches(_ matches: [NSRange], current: NSRange?) {
+        searchMatches = matches
+        currentSearchMatch = current
+        pendingSearchReveal = nil
+        for label in labels.values { if let view = label.view { refresh(view) } }
+    }
+
+    func revealSearchMatch(_ range: NSRange, in id: String) {
+        pendingSearchReveal = (id, range)
+        for label in labels.values { if let view = label.view { finishSearchReveal(in: view) } }
+    }
+
+    func canLocate(block path: String) -> Bool {
+        labels.values.contains { label in
+            guard let view = label.view, view.window != nil, !view.bounds.intersection(view.visibleRect).isEmpty,
+                  let id = view.selectionID else { return false }
+            return id == path || id.hasPrefix(path + ".")
+        }
+    }
+
+    private func finishSearchReveal(in view: MarkdownLabelView) {
+        guard let pending = pendingSearchReveal, view.selectionID == pending.id,
+              let leaf = document?.ranges[pending.id] else { return }
+        let revision = revision
+        DispatchQueue.main.async { [weak self, weak view] in
+            guard let self, let view, view.window != nil, self.revision == revision,
+                  self.pendingSearchReveal?.id == pending.id, self.pendingSearchReveal?.range == pending.range else { return }
+            view.window?.contentView?.layoutSubtreeIfNeeded()
+            let overlap = NSIntersectionRange(pending.range, leaf)
+            guard overlap.length > 0 else { return }
+            view.revealRange(NSRange(location: overlap.location - leaf.location, length: overlap.length))
+            self.pendingSearchReveal = nil
+        }
     }
 
     private func setRange(_ value: NSRange) {
@@ -360,12 +450,15 @@ extension EnvironmentValues {
 /// Persistent responder: the label where a drag began can scroll out of the lazy stack. Keeping
 /// focus here makes Copy and Select All continue to work even after that label has gone away.
 struct MarkdownSelectionHost: NSViewRepresentable {
-    let selection: MarkdownSelection
+    let reader: MarkdownReader
     let blocks: [MarkdownNode]
     let identity: AnyHashable?
+    var managesDocument = true
 
-    func makeNSView(context: Context) -> MarkdownSelectionView { MarkdownSelectionView(selection: selection) }
-    func updateNSView(_ view: MarkdownSelectionView, context: Context) { selection.setDocument(blocks, identity: identity) }
+    func makeNSView(context: Context) -> MarkdownSelectionView { MarkdownSelectionView(selection: reader.selection) }
+    func updateNSView(_ view: MarkdownSelectionView, context: Context) {
+        if managesDocument { reader.setDocument(blocks, identity: identity) }
+    }
     static func dismantleNSView(_ view: MarkdownSelectionView, coordinator: ()) { view.selection.endDrag() }
 }
 

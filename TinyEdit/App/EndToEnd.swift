@@ -26,7 +26,7 @@ enum EndToEnd {
     static func prepare() {
         guard let phase else { return }
         let fm = FileManager.default
-        if phase == 3 || phase == 4 || phase == 5 || phase == 7 || phase == 8 {
+        if phase == 3 || phase == 4 || phase == 5 || phase == 7 || phase == 8 || phase == 9 {
             try? fm.removeItem(at: base)
             try? fm.createDirectory(at: root, withIntermediateDirectories: true)
         }
@@ -81,6 +81,7 @@ enum EndToEnd {
             case 6: await phasePerf()
             case 7: await phaseMarkdownSelection()
             case 8: await phaseMinifiedJSON()
+            case 9: await phaseMarkdownReading()
             case 1: await phase1()
             case 3: await phaseDiff()
             case 4: await phaseLargeSave()
@@ -824,6 +825,133 @@ enum EndToEnd {
         check(fresh.hasPrefix("Mixed\n\nBefore") && fresh.contains("Image\tText\nicon\tlast")
               && fresh.contains("1. [ ] todo\n2. [x] done") && fresh.hasSuffix("End.") && !fresh.contains("Section"),
               "copy order includes image tables and tasks, without text from the previous rendering")
+    }
+
+    /// Exercise reading through the real app, parser, lazy page and file-opening path. In particular,
+    /// searches and folds must never edit the buffer, and following a link must retain unsaved text.
+    private static func phaseMarkdownReading() async {
+        let main = Workspaces.shared.main
+        check(await wait { main.launchGateOpen && main.window != nil }, "main window up")
+        var settings = main.settings
+        settings.fontSize = 13
+        settings.markdownPreviewLayout = .full
+        settings.markdownPreviewByDefault = true
+        main.updateSettings(settings)
+        main.resetWindowSize()
+        let dir = base.appendingPathComponent("Reading", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let first = dir.appendingPathComponent("reader.md")
+        let next = dir.appendingPathComponent("chapter two.md")
+        var source = "# Reader 阅读\n\nRendered **visible words** and `inline code`.\n\n[Next chapter](chapter%20two.md#destination) · [Last section](#section-59)\n\n"
+        for index in 0..<60 {
+            source += "## Section \(index)\n\nParagraph needle \(index). " + String(repeating: "Reading long documents 中文。 ", count: 10) + "\n\n"
+            source += "### Detail \(index)\n\nNested detail \(index).\n\n"
+        }
+        source += "## Search samples\n\n| Name | Value |\n| --- | --- |\n| search-table | 中文 👩🏽‍💻 |\n\n```swift\nlet sample = \"search-code\"\n```\n\nunique final 👩🏽‍💻\n"
+        let nextText = "# Second chapter\n\nIntro.\n\n## Destination\n\nLinked document body.\n"
+        try? source.write(to: first, atomically: true, encoding: .utf8)
+        try? nextText.write(to: next, atomically: true, encoding: .utf8)
+        await main.openURLsAsync([first])
+        let reader = main.previewReader
+        check(await wait { main.previewFull && reader.headings.count == 122 }, "full preview and outline prepared")
+        guard let window = main.window, let firstID = main.session.selectedBufferID, let store = main.activeStore else { return }
+        let generation = store.generation
+        let dirty = main.selectedBuffer?.dirty
+        let undo = store.undoManager.canUndo
+        func labels(_ view: NSView?) -> [MarkdownLabelView] {
+            guard let view else { return [] }
+            return (view as? MarkdownLabelView).map { [$0] } ?? view.subviews.flatMap { labels($0) }
+        }
+        func shownMatch() -> Bool {
+            labels(window.contentView).contains {
+                $0.currentSearchHighlight != nil && !$0.bounds.intersection($0.visibleRect).isEmpty
+            }
+        }
+        reader.foldAll()
+        check(reader.hiddenPaths.count > 200, "fold all hides sections and nested content")
+        main.showFind(replace: false)
+        check(main.previewFull && reader.findVisible && !main.find.visible, "Find stays in Preview Only")
+        reader.query = "unique final 👩🏽‍💻"
+        reader.refreshSearch()
+        check(await wait { reader.matchCount == 1 && shownMatch() }, "find reveals and highlights an offscreen match in a folded section")
+        check(!reader.collapsed.contains("reader-阅读") && !reader.collapsed.contains("search-samples"), "find unfolds all containing sections")
+        snapshot(window, "markdown-reader-find")
+
+        reader.query = "needle [0-9]+\\."
+        reader.regex = true
+        reader.refreshSearch()
+        check(await wait { reader.matchCount == 60 && reader.currentMatch == 1 && shownMatch() }, "regex finds rendered text across all sections")
+        main.findPrevious()
+        check(reader.currentMatch == 60, "Find Previous wraps in the preview")
+        check(await wait { shownMatch() }, "last match scrolls into view")
+        main.findNext()
+        check(reader.currentMatch == 1, "Find Next wraps in the preview")
+        reader.regex = false
+        reader.query = "visible words"
+        reader.refreshSearch()
+        check(await wait { reader.matchCount == 1 && shownMatch() }, "find searches displayed text without Markdown delimiters")
+        reader.query = "search-table"
+        reader.refreshSearch()
+        check(await wait { reader.matchCount == 1 && shownMatch() }, "find locates a table cell")
+        reader.query = "search-code"
+        reader.refreshSearch()
+        check(await wait { reader.matchCount == 1 && shownMatch() }, "find locates a code block")
+        reader.regex = true
+        reader.query = "["
+        reader.refreshSearch()
+        check(reader.invalidPattern && reader.currentMatch == nil, "invalid regex clears old highlights")
+        reader.closeFind()
+        check(main.previewFull && window.firstResponder === reader.selection.responder, "closing Find keeps the preview focused")
+        reader.foldAll()
+        reader.navigate(fragment: "section-59")
+        await settle(200)
+        _ = frame(window) {}
+        check(!reader.collapsed.contains("reader-阅读") && !reader.collapsed.contains("section-59"), "heading navigation unfolds the destination")
+        check(reader.jump?.path == reader.headings.first(where: { $0.id == "section-59" })?.path, "heading navigation addresses the original tree after folding")
+        let headingPath = reader.headings.first(where: { $0.id == "section-59" })?.path
+        check(await wait {
+            labels(window.contentView).contains {
+                $0.selectionID == headingPath.map { $0 + ".0" } && !$0.bounds.intersection($0.visibleRect).isEmpty
+            }
+        }, "outline navigation scrolls the destination heading into view")
+        reader.unfoldAll()
+        check(reader.hiddenPaths.isEmpty, "expand all restores the page")
+        check(store.generation == generation && store.logicalString() == source && main.selectedBuffer?.dirty == dirty
+              && store.undoManager.canUndo == undo, "reading leaves text, dirty state and undo history unchanged")
+        check((try? String(contentsOf: first, encoding: .utf8)) == source, "reading never writes the original file")
+        snapshot(window, "markdown-reader-outline")
+
+        // Invoke the actual page link handler, including percent-encoded names and a destination fragment.
+        if let label = labels(window.contentView).first {
+            let count = main.session.tabOrder.count
+            label.openURL?(URL(string: "chapter%20two.md#destination")!)
+            check(await wait { main.bufferID(for: next) == main.session.selectedBufferID && reader.headings.count == 2 }, "relative document link opens in a preview")
+            check(main.session.tabOrder.count == count + 1 && main.previewFull, "linked document gets one tab and retains reading layout")
+            check(await wait { reader.jump?.path == "2" }, "cross-document fragment jumps after parsing")
+        } else { check(false, "preview link handler attached") }
+        guard let nextID = main.bufferID(for: next) else { return }
+        main.showFind(replace: true)
+        check(!main.previewVisible && main.find.visible && main.find.showReplace, "Find and Replace deliberately opens the source")
+        main.hideFind()
+        main.host.textView.insertText("Unsaved addition.\n", replacementRange: NSRange(location: main.activeStore?.length ?? 0, length: 0))
+        let unsaved = main.activeStore?.logicalString()
+        main.selectTab(firstID)
+        await main.openMarkdownLink(URL(string: "chapter%20two.md#destination")!)
+        check(main.session.selectedBufferID == nextID && main.activeStore?.logicalString() == unsaved, "following a link reuses the tab without losing unsaved edits")
+        check((try? String(contentsOf: next, encoding: .utf8)) == nextText, "following a link does not save the target")
+        check(await wait { reader.headings.count == 2 }, "linked preview refreshes")
+        settings.markdownPreviewLayout = .split
+        main.updateSettings(settings)
+        await settle(200)
+        if let responder = reader.selection.responder { window.makeFirstResponder(responder) }
+        main.showFind(replace: false)
+        check(reader.findVisible && !main.find.visible && main.previewVisible, "split Find follows preview focus")
+        main.host.focus()
+        main.showFind(replace: false)
+        check(!reader.findVisible && main.find.visible && main.previewVisible, "split Find follows source focus")
+        main.hideFind()
+        check(labels(window.contentView).count < 100, "long reading uses only attached lazy labels")
+        snapshot(window, "markdown-reader-split")
     }
 
     private static func phaseDiff() async {

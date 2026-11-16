@@ -1,52 +1,13 @@
 import SwiftUI
 
-/// GitHub-style heading fragments for everyday documents, generated in document order.
-/// Paths identify nested headings without changing the parser's inline attributes.
-struct MarkdownNavigation {
-    struct Target: Equatable {
-        var topLevel: Int
-        var path: String
-    }
-    var targets: [String: Target] = [:]
-
-    init(_ blocks: [MarkdownNode]) {
-        var used: Set<String> = []
-        func visit(_ nodes: [MarkdownNode], prefix: String, top: Int?) {
-            for (index, node) in nodes.enumerated() {
-                let path = prefix.isEmpty ? "\(index)" : "\(prefix).\(index)"
-                switch node {
-                case .heading(_, let text):
-                    let base = Self.slug(String(text.characters))
-                    var slug = base
-                    var suffix = 0
-                    while used.contains(slug) { suffix += 1; slug = "\(base)-\(suffix)" }
-                    used.insert(slug)
-                    targets[slug] = Target(topLevel: top ?? index, path: path)
-                case .blockQuote(let children): visit(children, prefix: path, top: top ?? index)
-                case .list(let list):
-                    for (item, value) in list.items.enumerated() {
-                        visit(value.blocks, prefix: "\(path).\(item)", top: top ?? index)
-                    }
-                default: break
-                }
-            }
-        }
-        visit(blocks, prefix: "", top: nil)
-    }
-
+/// The fragment spelling used by the reader's heading index.
+enum MarkdownNavigation {
     static func slug(_ title: String) -> String {
         let scalars = title.precomposedStringWithCanonicalMapping.lowercased().unicodeScalars.filter {
             CharacterSet.alphanumerics.contains($0) || CharacterSet.nonBaseCharacters.contains($0)
                 || $0 == "-" || $0 == "_" || CharacterSet.whitespaces.contains($0)
         }
         return String(String.UnicodeScalarView(scalars)).map { $0.isWhitespace ? "-" : String($0) }.joined()
-    }
-
-    func target(for url: URL) -> Target? {
-        // Decode once. A literal percent in a heading must not be decoded a second time.
-        guard url.relativeString.hasPrefix("#"),
-              let fragment = String(url.relativeString.dropFirst()).removingPercentEncoding else { return nil }
-        return targets[fragment.precomposedStringWithCanonicalMapping]
     }
 }
 
@@ -65,7 +26,12 @@ struct MarkdownNavigation {
         finishJump()
     }
 
-    func canLocate(_ path: String) -> Bool { views[path]?.value?.window != nil }
+    func canLocate(_ path: String) -> Bool {
+        guard let view = views[path]?.value, view.window != nil, let scroll = view.enclosingScrollView else { return false }
+        // A lazy row can remain attached outside the viewport with an outdated frame. Let the
+        // SwiftUI reader bring that row back before using its native anchor for the exact jump.
+        return scroll.contentView.bounds.contains(view.convert(NSPoint.zero, to: scroll.contentView))
+    }
 
     func jump(to path: String) {
         pending = path

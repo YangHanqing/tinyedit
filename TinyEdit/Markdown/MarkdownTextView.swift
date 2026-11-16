@@ -106,6 +106,8 @@ final class MarkdownLabelView: NSView {
     private weak var selection: MarkdownSelection?
     private(set) var selectionID: String?
     private var selectedRange = NSRange(location: 0, length: 0)
+    private(set) var searchHighlights: [NSRange] = []
+    private(set) var currentSearchHighlight: NSRange?
 
     /// Draw links in the theme's color; keep the URL under a private key for hit testing.
     private static let linkKey = NSAttributedString.Key("TinyEdit.MarkdownLink")
@@ -143,6 +145,20 @@ final class MarkdownLabelView: NSView {
         guard range != selectedRange else { return }
         selectedRange = range
         needsDisplay = true
+    }
+
+    func setSearchHighlights(_ ranges: [NSRange], current: NSRange?) {
+        guard ranges != searchHighlights || current != currentSearchHighlight else { return }
+        searchHighlights = ranges
+        currentSearchHighlight = current
+        needsDisplay = true
+    }
+
+    func revealRange(_ range: NSRange) {
+        guard range.length > 0, NSMaxRange(range) <= storage.length else { return }
+        layoutForBounds()
+        let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        scrollToVisible(layout.boundingRect(forGlyphRange: glyphs, in: container).insetBy(dx: -8, dy: -24))
     }
 
     func setContent(_ text: NSAttributedString) {
@@ -208,6 +224,13 @@ final class MarkdownLabelView: NSView {
         layoutForBounds()
         let glyphs = layout.glyphRange(forBoundingRect: dirtyRect, in: container)
         layout.drawBackground(forGlyphRange: glyphs, at: .zero)
+        for range in searchHighlights where NSMaxRange(range) <= storage.length {
+            let match = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            let visible = NSIntersectionRange(match, glyphs)
+            guard visible.length > 0 else { continue }
+            (range == currentSearchHighlight ? Theme.findMatchCurrent : Theme.findMatch).setFill()
+            layout.enumerateEnclosingRects(forGlyphRange: visible, withinSelectedGlyphRange: match, in: container) { rect, _ in rect.fill() }
+        }
         if selectedRange.length > 0, NSMaxRange(selectedRange) <= storage.length {
             let selected = layout.glyphRange(forCharacterRange: selectedRange, actualCharacterRange: nil)
             let visible = NSIntersectionRange(selected, glyphs)

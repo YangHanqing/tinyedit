@@ -44,8 +44,9 @@ Screenshots use the English interface and dark theme. Both language and appearan
 
 | Feature | Description | Image |
 | --- | --- | --- |
-| Side-by-side preview | Press ⇧⌘V to read source and preview side by side, or enable preview by default. Supports headings, lists, quotes, tables, code blocks and images, including images inside tables and HTML `<img>` sizing. | <img src="assets/screenshots/markdown-tasks.png" alt="Markdown preview and tasks" width="560"> |
-| Tasks | Write tasks with `- [ ]`, then click a preview checkbox or press ⌘↩ to toggle completion. The status bar tracks progress, and Return continues the list. |  |
+| Markdown preview | Press ⇧⌘V to read source and preview side by side, switch to Preview Only, or enable preview by default. Supports headings, lists, quotes, tables, code blocks and images, including images inside tables and HTML `<img>` sizing. | <img src="assets/screenshots/markdown-tasks.png" alt="Markdown preview and tasks" width="560"> |
+| Reading long documents | Press ⌘F in the preview to search rendered text, with highlights, case sensitivity and regular expressions. Navigate with the heading outline, fold sections, and follow local document links and cross-document heading links. |  |
+| Tasks | Write tasks with `- [ ]`, then click a checkbox in the source editor or press ⌘↩ to toggle completion. The status bar tracks progress, and Return continues the list. |  |
 
 ### JSON
 

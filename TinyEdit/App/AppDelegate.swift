@@ -53,8 +53,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Escape over a full-width Markdown preview brings the editor back, unless a field (palette, rename) has the key.
     @MainActor
     private static func leaveFullPreview() -> Bool {
-        guard let state = Workspaces.shared.state(for: NSApp.keyWindow), state.previewFull,
+        guard let state = Workspaces.shared.state(for: NSApp.keyWindow),
               state.diff == nil, !state.paletteVisible else { return false }
+        if state.previewVisible, state.previewReader.findVisible {
+            state.previewReader.closeFind()
+            return true
+        }
+        guard state.previewFull else { return false }
         if let field = NSApp.keyWindow?.firstResponder as? NSTextView, field.isFieldEditor { return false }
         state.togglePreview()
         return true

@@ -65,6 +65,7 @@ final class AppState {
     var bookmarkBroken: Set<UUID> = []
     var previewBlocks: [MarkdownNode] = []
     var previewMessage: String?
+    let previewReader = MarkdownReader()
     var highlightReduced = false
     /// File ▸ Open Recent. Read at launch (not in init: it resolves bookmarks), then refreshed by
     /// `noteRecentDocument` and `clearRecentDocuments`.
@@ -347,6 +348,8 @@ final class AppState {
 
     /// Called whenever the visible buffer changes (tab switch, close, restore).
     func activeBufferChanged() {
+        previewBlocks = []
+        previewReader.beginDocument(identity: session.selectedBufferID)
         applyPreviewConcealment()
         if let doc = activeLargeFile { return activateLargeFile(doc) }
         if largeStatus != nil { largeStatus = nil }

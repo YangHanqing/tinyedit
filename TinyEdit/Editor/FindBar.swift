@@ -143,7 +143,7 @@ struct FieldBox<Content: View>: View {
 }
 
 /// "Aa" (case) and ".*" (regular expression) inside the find field: accent-filled while on.
-private struct OptionToggle: View {
+struct OptionToggle: View {
     let label: String
     let help: String
     @Binding var isOn: Bool

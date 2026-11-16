@@ -14,6 +14,11 @@ extension AppState {
     private var liveText: NSMutableString? { activeStore?.textStorage.mutableString }
 
     func showFind(replace: Bool) {
+        if !replace, previewVisible,
+           previewFull || previewReader.hasFocus || (previewReader.findVisible && window?.firstResponder !== host.textView) {
+            return showPreviewFind()
+        }
+        previewReader.closeFind(focus: false)
         if let doc = activeLargeFile {
             if let (a, b) = doc.selectionRange, a.row == b.row, b.column - a.column < 1000, let text = doc.selectedText(),
                !text.isEmpty {
@@ -89,6 +94,7 @@ extension AppState {
     }
 
     func findNext() {
+        if previewVisible, previewReader.findVisible { return previewReader.nextMatch() }
         if activeLargeFile != nil { return largeFindNext(forward: true) }
         if !find.visible { showFind(replace: false) }
         guard !find.query.isEmpty, let ns = liveText else { return }
@@ -107,6 +113,7 @@ extension AppState {
     }
 
     func findPrevious() {
+        if previewVisible, previewReader.findVisible { return previewReader.nextMatch(forward: false) }
         if activeLargeFile != nil { return largeFindNext(forward: false) }
         if !find.visible { showFind(replace: false) }
         guard !find.query.isEmpty, let ns = liveText else { return }
