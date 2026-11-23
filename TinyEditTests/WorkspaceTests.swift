@@ -103,9 +103,10 @@ final class WorkspaceTests: XCTestCase {
         let destination = await window()
         let id = try XCTUnwrap(source.session.selectedBufferID)
         source.stores[id]!.textStorage.replaceCharacters(in: NSRange(location: 0, length: 0), with: "before")
-        // Hold adoption at its actor hop until a previously queued edit finishes in the source.
+        // Hold adoption before the tab becomes visible in the destination, while a queued edit finishes.
         destination.pendingRemovals[id] = Task { @MainActor in
-            while destination.session.buffers[id] == nil { await Task.yield() }
+            while !source.transferring { await Task.yield() }
+            XCTAssertNil(destination.session.buffers[id])
             source.stores[id]!.textStorage.replaceCharacters(in: NSRange(location: 6, length: 0), with: " after")
         }
         let moved = await Workspaces.shared.moveTab(id, to: destination)
