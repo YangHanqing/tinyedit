@@ -168,7 +168,8 @@ enum DiagnosticReport {
                 case .info: "info"
                 default: "notice"
                 }
-                entries.append("\(formatter.string(from: entry.date)) \(level) [\(entry.subsystem):\(entry.category)] \(entry.composedMessage.prefix(600))")
+                let detail = entry.subsystem == subsystem ? String(entry.composedMessage.prefix(600)) : "(framework error)"
+                entries.append("\(formatter.string(from: entry.date)) \(level) [\(entry.subsystem):\(entry.category)] \(detail)")
             }
             if entries.count > maxLogEntries { lines.append("(\(entries.count - maxLogEntries) earlier entries left out)") }
             lines += entries.suffix(maxLogEntries)

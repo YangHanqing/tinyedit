@@ -299,8 +299,8 @@ final class MarkdownLabelView: NSView {
 
     func insertionPoint(at index: Int) -> (point: NSPoint, height: CGFloat) {
         layoutForBounds()
-        guard storage.length > 0 else { return (.zero, 15) }
-        let glyph = layout.glyphIndexForCharacter(at: min(index, storage.length - 1))
+        guard storage.length > 0, layout.numberOfGlyphs > 0 else { return (.zero, 15) }
+        let glyph = min(layout.glyphIndexForCharacter(at: min(max(0, index), storage.length - 1)), layout.numberOfGlyphs - 1)
         let line = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
         let rect = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
         return (NSPoint(x: index == storage.length ? rect.maxX : rect.minX, y: line.midY), line.height)
@@ -308,8 +308,8 @@ final class MarkdownLabelView: NSView {
 
     func visualLine(at index: Int) -> NSRange {
         layoutForBounds()
-        guard storage.length > 0 else { return NSRange(location: 0, length: 0) }
-        let glyph = layout.glyphIndexForCharacter(at: min(index, storage.length - 1))
+        guard storage.length > 0, layout.numberOfGlyphs > 0 else { return NSRange(location: 0, length: 0) }
+        let glyph = min(layout.glyphIndexForCharacter(at: min(max(0, index), storage.length - 1)), layout.numberOfGlyphs - 1)
         var glyphs = NSRange()
         _ = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &glyphs)
         var range = layout.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)

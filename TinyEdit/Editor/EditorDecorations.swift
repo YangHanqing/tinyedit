@@ -93,7 +93,7 @@ extension EditorTextView {
     func decorations(in visible: NSRect) -> EditorDecorations {
         var result = EditorDecorations()
         guard visible.width > 0, visible.height > 0, let lm = textLayoutManager, let cs = textContentStorage,
-              let text = cs.textStorage?.string as NSString? else { return result }
+              let text = cs.textStorage?.mutableString else { return result }
         let origin = textContainerOrigin
         let doc = cs.documentRange.location
         let drawingFont = font ?? EditorConfiguration.font(size: 13)

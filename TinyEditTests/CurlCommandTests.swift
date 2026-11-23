@@ -53,7 +53,16 @@ final class CurlCommandTests: XCTestCase {
         XCTAssertEqual(try parse("curl https://a.test https://b.test").unsupported, "https://b.test")
         XCTAssertEqual(try parse("curl ftp://x.test/f").unsupported, "ftp://")
         XCTAssertEqual(try parse("curl -H 'Host: other.test' https://x.test").unsupported, "-H Host")
+        XCTAssertEqual(try parse("curl -H 'Host: x.test' -H 'Host: other.test' https://x.test").unsupported, "-H Host")
+        XCTAssertEqual(try parse("curl --location-trusted https://x.test").unsupported, "--location-trusted")
         XCTAssertNil(try parse("curl -H 'Host: x.test' https://x.test").unsupported)
+        // -G with raw spaces or JSON must encode safely instead of trapping URLComponents.percentEncodedQuery.
+        let getSpaces = try parse("curl -G -d 'q=hello world' https://x.test")
+        XCTAssertNil(getSpaces.unsupported)
+        XCTAssertEqual(getSpaces.url.absoluteString, "https://x.test?q=hello%20world")
+        let getJSON = try parse(#"curl -G --json '{"a":1}' https://x.test"#)
+        XCTAssertNil(getJSON.unsupported)
+        XCTAssertTrue(getJSON.url.absoluteString.hasPrefix("https://x.test?%7B"))
     }
 
     /// Anything a shell would do beyond quoting means the text is not a request.

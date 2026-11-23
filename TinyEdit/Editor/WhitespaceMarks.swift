@@ -33,7 +33,7 @@ extension EditorTextView {
         let selections = selectedRanges.map(\.rangeValue).filter { $0.length > 0 }
         guard everywhere || !selections.isEmpty, visible.width > 0, visible.height > 0,
               let lm = textLayoutManager, let cs = textContentStorage,
-              let text = cs.textStorage?.string as NSString?, text.length > 0 else { return [] }
+              let text = cs.textStorage?.mutableString, text.length > 0 else { return [] }
         let origin = textContainerOrigin
         let doc = cs.documentRange.location
         let top = CGPoint(x: 0, y: max(visible.minY - origin.y, 0))

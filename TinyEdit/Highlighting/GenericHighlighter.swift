@@ -78,14 +78,13 @@ enum GenericHighlighter {
             if isSpace(c) { i += 1; continue }
             let wasLineStart = lineStart
             lineStart = false
-            let afterListDash = i >= 2 && u[i - 1] == 0x20 && u[i - 2] == 0x2D
             var inlineKey = false
             if s.inlineTableKeys, braceDepth > 0 {
                 var p = i - 1
                 while p >= 0, isSpace(u[p]) { p -= 1 }
                 inlineKey = p >= 0 && (u[p] == 0x7B || u[p] == 0x2C)
             }
-            let keyPosition = s.keyValue && (wasLineStart || afterListDash || inlineKey)
+            let keyPosition = s.keyValue && (wasLineStart || inlineKey)
 
             // Block comments
             for (o, cl) in s.blockComments where at(o, i) {
@@ -168,7 +167,7 @@ enum GenericHighlighter {
                     continue
                 }
             }
-            if s.keyValue, wasLineStart || afterListDash {
+            if s.keyValue, wasLineStart {
                 if c == 0x2D, i + 1 < n, u[i + 1] == 0x20 { lineStart = true; i += 1; continue }   // YAML "- key: v"
                 if SyntaxHighlighter.isIdentStart(c) || SyntaxHighlighter.isDigit(c) || c == 0x2E || c == 0x2D || c == 0x24 {
                     var j = i
@@ -252,13 +251,17 @@ enum GenericHighlighter {
 }
 
 enum MarkupHighlighter {
+    private static let commentOpen: [UInt16] = Array("<!--".utf16)
+    private static let commentClose: [UInt16] = Array("-->".utf16)
+    private static let cdataOpen: [UInt16] = Array("<![CDATA[".utf16)
+    private static let cdataClose: [UInt16] = Array("]]>".utf16)
+
     static func scan(_ u: [UInt16]) -> [HighlightSpan] {
         var out: [HighlightSpan] = []
         let n = u.count
         var i = 0
         func add(_ a: Int, _ b: Int, _ k: TokenKind) { if b > a { out.append(HighlightSpan(range: NSRange(location: a, length: b - a), kind: k)) } }
-        func starts(_ s: String, at p: Int) -> Bool {
-            let t = Array(s.utf16)
+        func starts(_ t: [UInt16], at p: Int) -> Bool {
             guard p + t.count <= n else { return false }
             for k in 0..<t.count where u[p + k] != t[k] { return false }
             return true
@@ -267,15 +270,15 @@ enum MarkupHighlighter {
 
         while i < n {
             guard u[i] == 0x3C else { i += 1; continue }
-            if starts("<!--", at: i) {
+            if starts(commentOpen, at: i) {
                 var j = i + 4
-                while j < n, !starts("-->", at: j) { j += 1 }
+                while j < n, !starts(commentClose, at: j) { j += 1 }
                 let e = min(n, j + 3)
                 add(i, e, .comment); i = e; continue
             }
-            if starts("<![CDATA[", at: i) {
+            if starts(cdataOpen, at: i) {
                 var j = i + 9
-                while j < n, !starts("]]>", at: j) { j += 1 }
+                while j < n, !starts(cdataClose, at: j) { j += 1 }
                 let e = min(n, j + 3)
                 add(i, e, .string); i = e; continue
             }

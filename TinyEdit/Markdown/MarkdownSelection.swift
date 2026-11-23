@@ -124,6 +124,8 @@ extension EnvironmentValues {
         identity = nil
         document = nil
         navigationText = nil
+        anchor = NSRange(location: 0, length: 0)
+        head = 0
         clearSelection()
         setSearchMatches([], current: nil)
     }
@@ -394,6 +396,9 @@ extension EnvironmentValues {
         let modifying = name.contains("AndModifySelection")
         let base = name.replacingOccurrences(of: "AndModifySelection", with: "")
         let document = prepare()
+        let length = document.text.length
+        head = min(length, max(0, head))
+        anchor = NSRange(location: min(length, max(0, anchor.location)), length: 0)
         var next = head
         let backward = base.contains("Left") || base.contains("Backward") || base.contains("Beginning") || base == "moveUp:"
         switch base {

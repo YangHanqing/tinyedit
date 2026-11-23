@@ -222,11 +222,14 @@ final class Workspaces {
         }
         let store = source.stores[id]
         let generation = store?.generation
+        let largeFile = source.largeFiles[id]
+        let largeGeneration = largeFile?.generation
         let metadata = source.session.buffers[id]
         let durable = await destination.adoptTab(transfer, before: target, select: select)
         // External reloads and already-running asynchronous edits can still finish during the flush.
         // Keep the source if its snapshot changed; never delete newer text or a failed write's only copy.
         guard durable, source.stores[id] === store, store?.generation == generation,
+              source.largeFiles[id] === largeFile, largeFile?.generation == largeGeneration,
               source.session.buffers[id] == metadata else {
             destination.removeBuffer(id, rememberClosed: false)
             source.showWindow()
@@ -302,7 +305,7 @@ final class Workspaces {
         guard !state.isMain, !state.closing, !state.transferring, windows.contains(where: { $0 === state }) else { return false }
         await state.restoreTask?.value
         state.host.captureViewState()
-        let unsaved = state.session.tabOrder.filter { state.isDirtyNow($0) }
+        let unsaved = state.session.tabOrder.filter { state.needsCloseConfirmation($0) }
         if !unsaved.isEmpty {
             let keep: Bool
             if asking {

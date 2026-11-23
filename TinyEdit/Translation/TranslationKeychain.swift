@@ -53,13 +53,14 @@ enum TranslationKeychain {
     }
 
     static func save(_ key: String, endpoint: String) throws {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         let q = query(endpoint: endpoint)
-        if key.isEmpty {
+        if trimmed.isEmpty {
             let status = SecItemDelete(q as CFDictionary)
             guard status == errSecSuccess || status == errSecItemNotFound else { throw TranslationFailure.keychain }
             return
         }
-        let value = [kSecValueData as String: Data(key.utf8)]
+        let value = [kSecValueData as String: Data(trimmed.utf8)]
         var status = SecItemUpdate(q as CFDictionary, value as CFDictionary)
         if status == errSecItemNotFound {
             var item = q.merging(value) { _, new in new }

@@ -13,11 +13,15 @@ final class HighlightController {
     /// The spans on the layout manager, the text length they were found for, and the tab swap they were
     /// applied after. Stale after a swap, which leaves no colors behind.
     private var applied: (spans: [HighlightSpan], length: Int, swap: Int)?
+    /// The buffer currently highlighted in windowed (2–5 MB) mode, so scroll only re-schedules for it.
+    private var windowedStoreID: UUID?
     var onNote: ((String) -> Void)?
     /// Every rendering attribute in this range was cleared (find matches too); called after the new colors are on.
     var onRegionRepainted: ((BufferTextStore, NSRange) -> Void)?
 
     init(host: EditorTextHost) { self.host = host }
+
+    func isWindowed(_ store: BufferTextStore) -> Bool { windowedStoreID == store.id }
 
     func schedule(store: BufferTextStore, language: EditorLanguage, delay: Duration = .milliseconds(200)) {
         task?.cancel()
@@ -49,6 +53,7 @@ final class HighlightController {
         let text = store.logicalString()
         let size = text.utf8.count
         guard language != .plain, size <= HighlightPolicy.offLimit else {
+            if windowedStoreID == store.id { windowedStoreID = nil }
             setReduced(language != .plain)
             clear(store)
             return
@@ -57,7 +62,10 @@ final class HighlightController {
 
         var limit: NSRange?
         if size > HighlightPolicy.fullLimit {
+            windowedStoreID = store.id
             limit = visibleWindow(store: store, host: host)
+        } else if windowedStoreID == store.id {
+            windowedStoreID = nil
         }
         // A small document is recolored as it is typed, so its scan must not wait behind background work.
         let spans = await Task.detached(priority: size <= HighlightPolicy.promptLimit ? .userInitiated : .utility) {

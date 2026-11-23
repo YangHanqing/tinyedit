@@ -17,6 +17,7 @@ final class BufferTextStore: NSObject, NSTextStorageDelegate {
     var viewState = ViewState()
     /// Fires synchronously for every character edit (not attribute-only edits).
     var onCharactersEdited: ((BufferTextStore) -> Void)?
+    var onEditRange: ((BufferTextStore, NSRange, Int) -> Void)?
     /// Bumped on every character edit; stale highlight results are dropped by comparing it.
     private(set) var highlightToken: UInt64 = 0
     /// Every character edit since the last highlight was applied, in current offsets; nil when there was none.
@@ -121,6 +122,7 @@ final class BufferTextStore: NSObject, NSTextStorageDelegate {
         guard TextEditClassifier.affectsDirtyAndRecovery(editedMask) else { return }
         MainActor.assumeIsolated {
             unhighlightedEdits = HighlightDiff.covering(unhighlightedEdits, edited: editedRange, delta: delta)
+            onEditRange?(self, editedRange, delta)
             guard notifyEdits else { return }
             generation &+= 1
             highlightToken &+= 1

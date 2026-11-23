@@ -51,8 +51,15 @@ enum LineEditing {
         let moved = text.substring(with: b), below = text.substring(with: next)
         let nextHasNewline = endsWithNewline(text, next)
         let joined = nextHasNewline ? below + moved : below + "\n" + moved.dropLast()
+        let delta = next.length + (nextHasNewline ? 0 : 1)
+        var target = shifted(selection, by: delta)
+        if !nextHasNewline {
+            let maxEnd = b.location + b.length + next.length
+            let loc = min(target.location, maxEnd)
+            target = NSRange(location: loc, length: min(target.length, maxEnd - loc))
+        }
         return LineEdits(edits: [Edit(range: NSRange(location: b.location, length: b.length + next.length), string: joined)],
-                         selection: shifted(selection, by: next.length + (nextHasNewline ? 0 : 1)))
+                         selection: target)
     }
 
     /// Removes the touched lines. On the last line the newline before it goes instead, so no empty line stays.
@@ -158,8 +165,15 @@ enum LineEditing {
                     edits.append(Edit(range: NSRange(location: start, length: openLength), string: ""))
                     edits.append(Edit(range: NSRange(location: closeStart, length: end - closeStart), string: ""))
                 } else {
-                    edits.append(Edit(range: NSRange(location: line.location + indent, length: 0), string: open + " "))
-                    edits.append(Edit(range: NSRange(location: lastNonBlankEnd(text, line), length: 0), string: " " + close))
+                    let openAt = line.location + indent
+                    let closeAt = lastNonBlankEnd(text, line)
+                    if closeAt <= openAt {
+                        // Indented blank line: emit one edit in ascending order so delimiters are never reversed.
+                        edits.append(Edit(range: NSRange(location: openAt, length: 0), string: open + "  " + close))
+                    } else {
+                        edits.append(Edit(range: NSRange(location: openAt, length: 0), string: open + " "))
+                        edits.append(Edit(range: NSRange(location: closeAt, length: 0), string: " " + close))
+                    }
                 }
             }
         }

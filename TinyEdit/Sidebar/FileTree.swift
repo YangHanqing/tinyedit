@@ -17,8 +17,9 @@ struct FileTreeRow: Identifiable, Equatable {
     let depth: Int
     /// Set on a folder's top row.
     let rootID: UUID?
+    let rootPath: String
     let isExpanded: Bool
-    var id: String { node.path }
+    var id: String { "\(rootPath)|\(node.path)" }
 }
 
 /// The sidebar's folder listings. Folders are read when first expanded, off the main thread, and read again
@@ -57,14 +58,16 @@ final class FileTreeModel {
         onExpandedChanged?()
     }
 
-    func removeRoot(_ path: String) {
+    func removeRoot(_ path: String, keeping remainingRoots: [String] = []) {
         watchers[path]?.stop()
         watchers[path] = nil
-        let inside = { (p: String) in Self.isInside(p, root: path) }
-        for key in Array(listings.keys) where inside(key) { listings[key] = nil }
-        for key in Array(loading.keys) where inside(key) { loading[key] = nil }
-        expanded = expanded.filter { !inside($0) }
-        unreadable = unreadable.filter { !inside($0) }
+        let shouldEvict = { (p: String) in
+            Self.isInside(p, root: path) && !remainingRoots.contains(where: { Self.isInside(p, root: $0) })
+        }
+        for key in Array(listings.keys) where shouldEvict(key) { listings[key] = nil }
+        for key in Array(loading.keys) where shouldEvict(key) { loading[key] = nil }
+        expanded = expanded.filter { !shouldEvict($0) }
+        unreadable = unreadable.filter { !shouldEvict($0) }
         onExpandedChanged?()
     }
 
@@ -124,17 +127,17 @@ final class FileTreeModel {
         for folder in folders {
             let node = FileNode(path: folder.path, name: folder.name, isDirectory: true)
             let open = expanded.contains(folder.path)
-            rows.append(FileTreeRow(node: node, depth: 0, rootID: folder.id, isExpanded: open))
-            if open { append(children: folder.path, depth: 1, into: &rows) }
+            rows.append(FileTreeRow(node: node, depth: 0, rootID: folder.id, rootPath: folder.path, isExpanded: open))
+            if open { append(children: folder.path, rootPath: folder.path, depth: 1, into: &rows) }
         }
         return rows
     }
 
-    private func append(children path: String, depth: Int, into rows: inout [FileTreeRow]) {
+    private func append(children path: String, rootPath: String, depth: Int, into rows: inout [FileTreeRow]) {
         for node in listings[path] ?? [] {
             let open = node.isDirectory && expanded.contains(node.path)
-            rows.append(FileTreeRow(node: node, depth: depth, rootID: nil, isExpanded: open))
-            if open { append(children: node.path, depth: depth + 1, into: &rows) }
+            rows.append(FileTreeRow(node: node, depth: depth, rootID: nil, rootPath: rootPath, isExpanded: open))
+            if open { append(children: node.path, rootPath: rootPath, depth: depth + 1, into: &rows) }
         }
     }
 

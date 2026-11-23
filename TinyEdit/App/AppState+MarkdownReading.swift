@@ -33,6 +33,14 @@ extension AppState {
         components.fragment = nil
         guard let url = components.url?.standardizedFileURL else { return }
         var target = url
+        // Never silently open internal app persistence files (session.json, snapshots) or non-regular files
+        // such as directories, FIFOs, or device nodes (/dev/zero).
+        let appRoot = AppPaths.root.standardizedFileURL.resolvingSymlinksInPath().path
+        let resolvedPath = target.resolvingSymlinksInPath().path
+        if resolvedPath == appRoot || resolvedPath.hasPrefix(appRoot + "/") { return }
+        if FileManager.default.fileExists(atPath: target.path), FileLoader.regularFileStats(at: target) == nil {
+            return
+        }
         // A path is not a sandbox grant. Ask for the exact linked file only when no existing grant
         // (an open folder, an already-open tab or a file selected before) reaches it.
         if bufferID(for: target) == nil && !FileManager.default.isReadableFile(atPath: target.path) {
@@ -50,6 +58,7 @@ extension AppState {
             }
             target = selected
         }
+        guard FileLoader.regularFileStats(at: target) != nil else { return }
         await openURLsAsync([target])
         guard let id = bufferID(for: target), session.selectedBufferID == id,
               session.buffers[id]?.language == .markdown, activeLargeFile == nil else { return }

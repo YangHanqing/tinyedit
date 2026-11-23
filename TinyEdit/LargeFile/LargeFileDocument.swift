@@ -114,6 +114,7 @@ final class LargeFileDocument {
     private var countTask: Task<Void, Never>?
     private var filterTask: Task<Void, Never>?
     private var watcher: DispatchSourceFileSystemObject?
+    private var closed = false
     /// Samples of the bytes indexed so far: a file that grew but no longer holds them was rewritten, not appended to.
     private var witnesses: [(offset: Int, bytes: Data)] = []
     private var lastStatusPush = Date.distantPast
@@ -135,7 +136,7 @@ final class LargeFileDocument {
     /// What the snapshot holds: applied edits, or ones still waiting for their check.
     var snapshotEdits: LargeFileEdits { pendingEdits ?? edits }
     var isSaving: Bool { saveProgress != nil }
-    var canEdit: Bool { isOpen && progress.complete && pendingEdits == nil && !editsMismatch && filterRows == nil && !isSaving && !isReloading }
+    var canEdit: Bool { isOpen && progress.complete && pendingEdits == nil && !editsMismatch && conflictCanSaveAs && filterRows == nil && !isSaving && !isReloading }
     var fileSize: Int { source?.size ?? acknowledged?.size ?? 0 }
     var baseRows: Int { progress.rows }
     var displayRows: Int { edits.displayCount(baseRows: baseRows) }
@@ -153,7 +154,8 @@ final class LargeFileDocument {
     }
 
     func attach(_ source: LargeFileSource, encoding: TextEncoding) {
-        close()
+        tearDownResources()
+        closed = false
         self.source = source
         self.encoding = encoding
         index = LargeFileIndex(encoding: encoding)
@@ -181,20 +183,30 @@ final class LargeFileDocument {
 
     /// Opens a restored tab's file the first time it is shown. Safe to call often.
     func ensureOpen(_ url: URL?) {
+        guard !closed else { return }
         guard source == nil, !isOpening, let url else {
             if source != nil, index == nil { rebuildIndex() }
             return
         }
         isOpening = true
-        Task {
-            let opened = try? await Self.openSource(url, encoding: encoding)
-            isOpening = false
-            guard let (source, encoding) = opened else { return pushStatus(force: true) }
-            attach(source, encoding: encoding)
+        let token = reloadToken
+        Task { [weak self] in
+            let opened = try? await Self.openSource(url, encoding: self?.encoding)
+            guard let self else { return }
+            self.isOpening = false
+            guard !self.closed, token == self.reloadToken else { return }
+            guard let (source, encoding) = opened else { return self.pushStatus(force: true) }
+            self.attach(source, encoding: encoding)
         }
     }
 
     func close() {
+        closed = true
+        reloadToken += 1
+        tearDownResources()
+    }
+
+    private func tearDownResources() {
         scanTask?.cancel(); scanTask = nil
         countTask?.cancel(); countTask = nil
         filterTask?.cancel(); filterTask = nil
@@ -281,10 +293,11 @@ final class LargeFileDocument {
     }
 
     /// The memory tiers: the caches go when the tab is out of sight for a while, the index too under memory pressure.
+    /// Dirty tabs keep their index so Save All / Close-and-Save never fail with a missing index.
     func trim(releaseIndex: Bool) {
         source?.dropCache()
         index?.dropCache()
-        guard releaseIndex, !isSaving, !filterRunning, pendingEdits == nil, index?.isComplete == true else { return }
+        guard releaseIndex, !hasEdits, !isSaving, !filterRunning, pendingEdits == nil, index?.isComplete == true else { return }
         scanTask?.cancel(); scanTask = nil
         index = nil
     }
@@ -307,6 +320,10 @@ final class LargeFileDocument {
         w.setEventHandler { [weak self] in
             MainActor.assumeIsolated { self?.onDiskEvent?() }
         }
+        // Keep `source` (and its fd) alive until libdispatch finishes tearing down the vnode source.
+        w.setCancelHandler {
+            withExtendedLifetime(source) {}
+        }
         w.resume()
         watcher = w
     }
@@ -324,20 +341,26 @@ final class LargeFileDocument {
         // Rewritten in place (truncated and written again, copytruncate): what was read is not there any more.
         if now.size < indexed || !witnessesHold() { return edited ? .conflict(canSaveAs: false) : .reload }
         guard progress.complete else { return .none }
-        if now.size > indexed { return .appended }
+        if now.size > indexed {
+            // Reopening the last row would widen its range and invalidate an edit sitting on it;
+            // surface a conflict where Save As still writes the pre-append bytes cleanly.
+            if let lastRow = progress.rows > 0 ? progress.rows - 1 : nil,
+               edits.edits.contains(where: { $0.row == lastRow }) {
+                return .conflict(canSaveAs: true)
+            }
+            return .appended
+        }
         guard now.modified != acknowledged?.modified else { return .none }
         // Same size, newer date: rewritten in place, or only touched.
         if !edited { return .reload }
-        if edits.matches(source: source, index: index) {
-            acknowledged = now
-            return .none
-        }
-        return .conflict(canSaveAs: false)
+        return .conflict(canSaveAs: edits.matches(source: source, index: index))
     }
 
     /// The file grew: read on from its old last row.
     func appended() {
         guard let source, let index, index.isComplete else { return }
+        countTask?.cancel(); countTask = nil
+        filterTask?.cancel(); filterTask = nil
         source.dropBlocks(from: progress.scannedBytes)
         index.reopenTail()
         progress = index.progress
@@ -345,6 +368,7 @@ final class LargeFileDocument {
         let tail = Tail(row: progress.rows, offset: progress.scannedBytes)
         if appendedTail.map({ $0.row > tail.row }) ?? true { appendedTail = tail }
         acknowledged = source.fingerprint
+        generation += 1
         // The view caches rows by number: the old last row (often the empty one after the final break) now differs.
         displayVersion += 1
         startScan()
@@ -354,6 +378,7 @@ final class LargeFileDocument {
     /// Edits are refused while it reads (`isReloading`). A newer reload started meanwhile does the work, and this
     /// one reports success for it.
     func reload(_ url: URL, encoding newEncoding: TextEncoding? = nil) async -> Bool {
+        guard !closed else { return false }
         reloadToken += 1
         let token = reloadToken
         isReloading = true
@@ -365,6 +390,7 @@ final class LargeFileDocument {
             }
         }
         let opened = try? await Self.openSource(url, encoding: newEncoding ?? encoding)
+        guard !closed else { return false }
         guard token == reloadToken else { return true }
         guard let (source, encoding) = opened else { return false }
         edits = LargeFileEdits()
@@ -738,7 +764,8 @@ final class LargeFileDocument {
             return search.backward(display: from.0, column: from.1)
                 ?? search.backward(display: edits.displayCount(baseRows: rows), column: 0)
         }.value
-        guard let (display, range) = hit, self.edits == edits else { return false }
+        guard let (display, range) = hit, !self.closed, self.index === index, self.source === source,
+              self.query == q, self.edits == edits else { return false }
         currentMatch = (display, range)
         let visual = visualRow(forDisplay: display)
         if filterRows != nil, displayRow(forVisual: visual) != display {
@@ -959,13 +986,23 @@ final class LargeFileDocument {
         } catch {
             return .failure(.couldNotSave)
         }
-        // A file that is not the one read (replaced, or rewritten in place) needs the user's go-ahead. That
-        // go-ahead (`overwrite`) is for the version there now: one that changes during the write is not replaced.
+        guard let index, progress.complete else { return .failure(.notReady) }
+        // A file that is not the version we acknowledged (replaced, truncated, or rewritten in place)
+        // needs the user's go-ahead. Compare against `acknowledged` + `progress.scannedBytes`, never live `fstat`.
         let current = LargeFileFingerprint.of(path: url.path)
-        let sameAsRead = current.map { c in source.fingerprint.map { c.isSameFile(as: $0) && c.size == $0.size } ?? false } ?? true
-        if !overwrite, current != nil, !sameAsRead { return .failure(.externalChange) }
-        // Overwrite or not, edits are spliced in at their offsets: the bytes they replace must still be there.
-        guard let index, edits.matches(source: source, index: index) else { return .failure(.editsNoLongerMatch) }
+        let indexedSize = progress.scannedBytes
+        let sameAsAcknowledged: Bool
+        if let c = current, let ack = acknowledged {
+            sameAsAcknowledged = c.isSameFile(as: ack) && c.size == indexedSize && c.modified == ack.modified && witnessesHold()
+        } else {
+            sameAsAcknowledged = current == nil
+        }
+        if !overwrite, current != nil, !sameAsAcknowledged { return .failure(.externalChange) }
+        // Overwrite or not, edits are spliced in at their offsets: the source bytes we stream from must still match.
+        guard let sourceState = source.fingerprint, sourceState.size >= indexedSize,
+              witnessesHold(), edits.matches(source: source, index: index) else {
+            return .failure(.editsNoLongerMatch)
+        }
 
         saveProgress = 0
         pushStatus(force: true)
@@ -974,9 +1011,10 @@ final class LargeFileDocument {
             try? FileManager.default.removeItem(at: tmp)
             pushStatus(force: true)
         }
-        let size = source.size
+        let size = indexedSize
         let edits = self.edits
         let encoding = self.encoding
+        let bomLength = index.splitter.bomLength
         let lineBreak = lineEnding == .crlf ? "\r\n" : "\n"
         let needed = estimate + 64 * 1_048_576
         let report: @Sendable (Double) -> Void = { [weak self] p in
@@ -986,12 +1024,13 @@ final class LargeFileDocument {
             do {
                 var last = Date.distantPast
                 try LargeFileWriter.write(source: source, size: size, edits: edits, encoding: encoding, lineBreak: lineBreak,
-                                          replacement: replacement, to: tmp, isCancelled: { false }) { p in
+                                          replacement: replacement, bomLength: bomLength, to: tmp, isCancelled: { false }) { p in
                     let now = Date()
                     guard now.timeIntervalSince(last) > 0.2 else { return }
                     last = now
                     report(p)
                 }
+                guard source.fingerprint == sourceState else { return .failure(.externalChange) }
                 return .success(try LargeFileWriter.install(tmp, at: url, expected: current,
                                                             presenter: presenter))
             } catch LargeFileSaveError.notEnoughSpace {

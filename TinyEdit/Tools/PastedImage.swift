@@ -32,7 +32,7 @@ enum PastedImage {
         if !urls.isEmpty { return .files(urls) }
         if pasteboard.types?.contains(.string) == true { return .other }
         guard let type = pasteboard.availableType(from: imageTypes), let data = pasteboard.data(forType: type),
-              !data.isEmpty else { return .other }
+              !data.isEmpty, data.count <= maxBytes else { return .other }
         return .image(data)
     }
 
@@ -57,8 +57,11 @@ enum PastedImage {
         urls.prefix(maxImages).compactMap { url in
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            guard let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size <= maxBytes else { return nil }
-            return try? Data(contentsOf: url)
+            guard let size = FileLoader.regularFileSize(at: url), size <= maxBytes,
+                  let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+            defer { try? handle.close() }
+            guard let data = try? handle.read(upToCount: maxBytes + 1), data.count <= maxBytes else { return nil }
+            return data
         }
     }
 }

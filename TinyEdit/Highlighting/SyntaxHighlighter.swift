@@ -24,10 +24,25 @@ enum HighlightPolicy {
 enum SyntaxHighlighter {
     /// `limit` is a UTF-16 range expanded to line boundaries by the caller; nil scans the whole text.
     static func spans(language: EditorLanguage, text: String, limit: NSRange?) -> [HighlightSpan] {
-        let all = Array(text.utf16)
-        let lo = max(0, min(limit?.location ?? 0, all.count))
-        let hi = max(lo, min(lo + (limit?.length ?? all.count), all.count))
-        let slice = Array(all[lo..<hi])
+        guard language != .plain else { return [] }
+        let lo: Int
+        let slice: [UInt16]
+        if let limit {
+            let ns = text as NSString
+            let total = ns.length
+            lo = max(0, min(limit.location, total))
+            let hi = max(lo, min(lo + limit.length, total))
+            let count = hi - lo
+            slice = [UInt16](unsafeUninitializedCapacity: count) { buf, initialized in
+                if count > 0, let base = buf.baseAddress {
+                    ns.getCharacters(base, range: NSRange(location: lo, length: count))
+                }
+                initialized = count
+            }
+        } else {
+            lo = 0
+            slice = Array(text.utf16)
+        }
         let local: [HighlightSpan]
         switch language {
         case .plain: return []
@@ -38,6 +53,7 @@ enum SyntaxHighlighter {
         case .diff: local = MarkupHighlighter.scanDiff(slice)
         default: local = GenericHighlighter.scan(slice, syntax: LanguageSyntax.table[language] ?? LanguageSyntax())
         }
+        if lo == 0 { return local }
         return local.map { HighlightSpan(range: NSRange(location: $0.range.location + lo, length: $0.range.length), kind: $0.kind) }
     }
 

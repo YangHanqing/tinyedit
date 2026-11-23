@@ -496,6 +496,56 @@ final class AppStateIntegrationTests: XCTestCase {
         XCTAssertTrue(s.isDirtyNow(draft))
         XCTAssertEqual(s.session.orderedBuffers.filter { s.isDirtyNow($0.id) }.map(\.id), [draft])
     }
+
+    /// Saving through a symlink keeps the target's mode (0600, not the symlink's 0755), and saving an empty
+    /// buffer over an unreadable existing file refuses to report a false success.
+    func testSymlinkSaveKeepsTargetModeAndUnreadableFileDoesNotFakeSave() async throws {
+        let target = files.appendingPathComponent("secret.txt")
+        let link = files.appendingPathComponent("secret-link.txt")
+        try Data("old\n".utf8).write(to: target)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+        let stats = try FileSaver.save(logicalLF: "new\n", to: link, encoding: .utf8, lineEnding: .lf,
+                                       acknowledgedDiskHash: ContentHash.sha256Hex(Data("old\n".utf8)),
+                                       overwriteConfirmed: false, presenter: nil)
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "new\n")
+        XCTAssertNoThrow(try FileManager.default.destinationOfSymbolicLink(atPath: link.path))
+        XCTAssertEqual(stats.posixPermissions & 0o777, 0o600)
+
+        let locked = files.appendingPathComponent("writeonly.txt")
+        try Data("keep\n".utf8).write(to: locked)
+        try FileManager.default.setAttributes([.posixPermissions: 0o200], ofItemAtPath: locked.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: locked.path) }
+        XCTAssertThrowsError(try FileSaver.save(logicalLF: "", to: locked, encoding: .utf8, lineEnding: .lf,
+                                                acknowledgedDiskHash: ContentHash.sha256Hex(Data("keep\n".utf8)),
+                                                overwriteConfirmed: false, presenter: nil))
+    }
+
+    /// Regression guards for text-corrupting/crashing line edits and cross-window recovery epochs.
+    func testLineEditingBoundsBlockCommentAndRecoveryEpochGuard() async throws {
+        let moved = try XCTUnwrap(LineEditing.moveDown(in: "abc\ndef" as NSString, selection: NSRange(location: 0, length: 4)))
+        XCTAssertLessThanOrEqual(NSMaxRange(moved.selection), 7)
+
+        let commented = LineEditing.toggleComment(in: "  " as NSString, selection: NSRange(location: 2, length: 0),
+                                                  syntax: .block("/*", "*/"))
+        XCTAssertEqual(commented.edits.count, 1)
+        XCTAssertEqual(commented.edits[0].range, NSRange(location: 2, length: 0))
+        XCTAssertEqual(commented.edits[0].string, "/*  */")
+
+        let actor = RecoveryActor(root: root)
+        await actor.setLaunchGateOpen(true)
+        let id = UUID()
+        let manifest = SessionFile()
+        _ = await actor.flush(items: [FlushItem(id: id, generation: 10, logicalLF: "old", epoch: 0)], manifest: manifest, seq: 1)
+        _ = await actor.remove(id: id, manifest: manifest, seq: 2)
+        let epoch = await actor.readmit(id)
+        // Stale pre-transfer flush with higher generation (10) from epoch 0 must be dropped.
+        _ = await actor.flush(items: [FlushItem(id: id, generation: 10, logicalLF: "stale", epoch: 0)], manifest: manifest, seq: 3)
+        let out = await actor.flush(items: [FlushItem(id: id, generation: 0, logicalLF: "fresh", epoch: epoch)], manifest: manifest, seq: 4)
+        XCTAssertEqual(out.written[id], 0)
+        XCTAssertEqual(try RecoveryStore(root: root).readSnapshot(recoveryFile: "\(id.uuidString).snapshot"), "fresh")
+    }
 }
 
 /// Typing latency on the main thread: the keystroke path must stay O(1) on a large document.

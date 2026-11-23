@@ -47,7 +47,7 @@ struct LargeFileRowSplitter: Sendable {
                 row(start, contentEnd, lf + unit)
                 start = lf + unit
             } else if limit < n {
-                let cut = softCut(base, start, limit)
+                let cut = softCut(base, start, limit, n)
                 row(start, cut, cut)
                 start = cut
             } else if atEOF {
@@ -86,30 +86,46 @@ struct LargeFileRowSplitter: Sendable {
     }
 
     /// Where a long line is cut: before `limit`, never inside a character (UTF-8 continuation bytes, a UTF-16
-    /// surrogate pair) and, in GB18030, only after a byte that cannot be part of a multi-byte character.
-    private func softCut(_ base: UnsafePointer<UInt8>, _ start: Int, _ limit: Int) -> Int {
+    /// surrogate pair), never splitting a CRLF across two rows, and in GB18030 only after a byte that cannot be
+    /// part of a multi-byte character. Backup is bounded (<= 4 bytes) so `block(_:)`'s 8-byte lookahead always matches.
+    private func softCut(_ base: UnsafePointer<UInt8>, _ start: Int, _ limit: Int, _ n: Int) -> Int {
         var c = limit
         switch encoding {
         case .utf8, .utf8BOM:
-            while c > start + 1, base[c] & 0xC0 == 0x80 { c -= 1 }
+            var backed = 0
+            while c > start + 1, backed < 3, base[c] & 0xC0 == 0x80 {
+                c -= 1
+                backed += 1
+            }
+            // Keep CRLF together when `\r` sits immediately before `\n` at the cut boundary.
+            if c > start + 1, c < n, base[c - 1] == 0x0D, base[c] == 0x0A { c -= 1 }
         case .utf16LE, .utf16BE:
-            let unit = encoding == .utf16LE ? UInt16(base[c - 2]) | UInt16(base[c - 1]) << 8
-                                            : UInt16(base[c - 2]) << 8 | UInt16(base[c - 1])
-            if (0xD800...0xDBFF).contains(unit) { c -= 2 }
+            let little = encoding == .utf16LE
+            let unit = little ? UInt16(base[c - 2]) | UInt16(base[c - 1]) << 8
+                              : UInt16(base[c - 2]) << 8 | UInt16(base[c - 1])
+            if (0xD800...0xDBFF).contains(unit) {
+                c -= 2
+            } else if unit == 0x000D, c + 1 < n {
+                let next = little ? UInt16(base[c]) | UInt16(base[c + 1]) << 8
+                                  : UInt16(base[c]) << 8 | UInt16(base[c + 1])
+                if next == 0x000A { c -= 2 }
+            }
         case .gb18030:
             // A trail byte can look like a lead or ASCII, so boundaries are only known walking from the row's start:
             // 0x81–0xFE leads a 4-byte character when a digit follows, else a 2-byte one; anything else is one byte.
-            // A CR is not cut after, so a CRLF stays together. Only `limit` bytes plus one are looked at, as the
-            // scan and a block read both have them.
+            // A CR is avoided only when LF immediately follows at `limit`, keeping backup <= 4 bytes.
             var i = start
             c = start
+            var prev = start
             while i < limit {
                 let b = base[i]
                 let width = b >= 0x81 && b <= 0xFE ? (base[i + 1] >= 0x30 && base[i + 1] <= 0x39 ? 4 : 2) : 1
                 if i + width > limit { break }
+                prev = i
                 i += width
-                if b != 0x0D { c = i }
+                c = i
             }
+            if c > start + 1, c < n, base[c - 1] == 0x0D, base[c] == 0x0A { c = prev }
             if c <= start { c = limit }
         }
         return c > start ? c : limit
@@ -340,8 +356,10 @@ final class LargeFileIndex: @unchecked Sendable {
         lock.unlock()
         guard count > 0 else { return [] }
 
-        // A few bytes past the block: a long line's piece is cut by looking at the byte after the cut, as the scan did.
-        let data = source.read(offset: cp.offset, count: end - cp.offset + 8)
+        // A few bytes past a non-EOF block: a long line's piece is cut by looking at the byte after the cut, as
+        // the scan did. At EOF, stop strictly at `end` so unindexed bytes appended since the scan are never cached.
+        let readCount = max(end - cp.offset, 0) + (atEOF ? 0 : 8)
+        let data = source.read(offset: cp.offset, count: readCount)
         var rows: [LargeFileRow] = []
         rows.reserveCapacity(count)
         var line = cp.line

@@ -124,7 +124,8 @@ final class TranslationRun {
                 var failure: (index: Int, error: Error)?
                 for (index, result) in zip(batch, results) {
                     do {
-                        let body = try result?.get().trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        let raw = try result?.get().trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        let body = LineEnding.normalizeToLF(raw)
                         guard !body.isEmpty else { throw TranslationFailure.empty }
                         outputs[index] = body
                     } catch {

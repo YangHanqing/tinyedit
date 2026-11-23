@@ -31,8 +31,10 @@ enum FileSaver {
         let payloadHash = ContentHash.sha256Hex(payload)
         let logicalHash = ContentHash.logicalHex(logicalLF)
 
-        // Previous mode and creation date, best effort. A miss never fails the save.
-        let previous = try? fm.attributesOfItem(atPath: url.path)
+        // Previous mode and creation date of the target file (following symlinks), best effort.
+        // Using `lstat` on a symlink would read the symlink's own mode (0755/0777) and apply it to the target.
+        let initialTargetPath = url.resolvingSymlinksInPath().path
+        let previous = try? fm.attributesOfItem(atPath: initialTargetPath)
         let previousMode = (previous?[.posixPermissions] as? NSNumber)?.intValue
         let previousCreation = previous?[.creationDate] as? Date
 
@@ -47,20 +49,34 @@ enum FileSaver {
 
         var failure: Error?
         var coordError: NSError?
+        var writtenURL = url
         NSFileCoordinator(filePresenter: presenter).coordinate(writingItemAt: url, options: .forReplacing,
                                                                error: &coordError) { dest in
+            writtenURL = dest
             do {
                 // Authoritative check, inside the coordinator, immediately before bytes change.
                 let exists = fm.fileExists(atPath: dest.path)
                 var original: Data?
                 if exists {
-                    original = try? Data(contentsOf: dest)
-                    let rawNow = ContentHash.sha256Hex(original ?? Data())
-                    if rawNow == payloadHash {
-                        return // identical bytes already in place; acknowledge only
+                    guard let size = FileLoader.regularFileSize(at: dest) else {
+                        throw FileSaveError.couldNotSaveFile
                     }
-                    if rawNow != acknowledgedDiskHash && !overwriteConfirmed {
+                    if size <= FileLoader.maxOpenBytes {
+                        original = try? originalBytes(at: dest)
+                    }
+                    if let bytes = original {
+                        let rawNow = ContentHash.sha256Hex(bytes)
+                        if rawNow == payloadHash {
+                            return // identical bytes already in place; acknowledge only
+                        }
+                        if rawNow != acknowledgedDiskHash && !overwriteConfirmed {
+                            throw FileSaveError.externalChange
+                        }
+                    } else if !overwriteConfirmed, size > FileLoader.maxOpenBytes {
                         throw FileSaveError.externalChange
+                    } else if !overwriteConfirmed {
+                        // Cannot read existing bytes to verify disk state; never treat as empty.
+                        throw FileSaveError.couldNotSaveFile
                     }
                 }
                 try install(tmp: tmp, payload: payload, at: dest, original: exists ? .some(original) : nil)
@@ -71,13 +87,14 @@ enum FileSaver {
         if let failure { throw failure }
         if coordError != nil { throw FileSaveError.couldNotSaveFile }
 
-        // Restore mode and creation date best effort.
+        // Restore mode and creation date on the written target (following symlinks), best effort.
+        let finalTargetPath = writtenURL.resolvingSymlinksInPath().path
         var attrs: [FileAttributeKey: Any] = [:]
         if let previousMode { attrs[.posixPermissions] = previousMode }
         if let previousCreation { attrs[.creationDate] = previousCreation }
-        if !attrs.isEmpty { try? fm.setAttributes(attrs, ofItemAtPath: url.path) }
+        if !attrs.isEmpty { try? fm.setAttributes(attrs, ofItemAtPath: finalTargetPath) }
 
-        guard let now = try? fm.attributesOfItem(atPath: url.path) else { throw FileSaveError.couldNotSaveFile }
+        guard let now = try? fm.attributesOfItem(atPath: finalTargetPath) else { throw FileSaveError.couldNotSaveFile }
         let mode = (now[.posixPermissions] as? NSNumber)?.intValue ?? 0
         let hadExec = (previousMode ?? 0) & 0o111 != 0
         return SavedFileStats(rawHash: payloadHash, logicalHash: logicalHash, byteSize: payload.count,
@@ -86,12 +103,32 @@ enum FileSaver {
                               executableBitPreserved: !hadExec || (mode & 0o111) != 0)
     }
 
+    private static func originalBytes(at url: URL) throws -> Data {
+        let handle = try FileLoader.regularFileHandle(at: url)
+        defer { try? handle.close() }
+        var bytes = Data()
+        while bytes.count <= FileLoader.maxOpenBytes {
+            let remaining = FileLoader.maxOpenBytes + 1 - bytes.count
+            guard let chunk = try handle.read(upToCount: min(remaining, 1_048_576)), !chunk.isEmpty else {
+                return bytes
+            }
+            bytes.append(chunk)
+        }
+        throw FileOpenError.fileTooLarge(bytes: bytes.count)
+    }
+
     /// Replace via the container temp. If the sandbox grants the file but not its directory and the
     /// replace is refused, fall back to an in-place write, which keeps inode, mode, xattrs and ACLs.
     /// Atomicity across volumes is best effort: `replaceItemAt` may copy.
     /// `original` is nil when the file does not exist, `.some(nil)` when it exists but could not be read.
     private static func install(tmp: URL, payload: Data, at dest: URL, original: Data??) throws {
         let fm = FileManager.default
+        // A link's directory entry must survive saving through it.
+        if (try? fm.attributesOfItem(atPath: dest.path)[.type] as? FileAttributeType) == .typeSymbolicLink {
+            guard case .some(let bytes?) = original else { throw FileSaveError.couldNotSaveFile }
+            try writeInPlace(payload, at: dest, original: bytes)
+            return
+        }
         do {
             if original != nil {
                 _ = try fm.replaceItemAt(dest, withItemAt: tmp)

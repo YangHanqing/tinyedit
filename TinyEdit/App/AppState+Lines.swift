@@ -104,7 +104,8 @@ extension AppState {
         let full = ns.lineRange(for: NSRange(location: start, length: 0))
         var end = NSMaxRange(full)
         if end > full.location, ns.character(at: end - 1) == 0x0A { end -= 1 }
-        return min(start + (column ?? 1) - 1, end)
+        let offset = max(0, (column ?? 1) - 1)
+        return start + min(offset, max(0, end - start))
     }
 
     // MARK: Task counts

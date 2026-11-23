@@ -30,6 +30,7 @@ extension AppState {
         session.buffers[id] = b
         store.viewState = .init()
         if id == session.selectedBufferID {
+            host.textView.clearInlineHint()
             host.textView.setSelectedRange(NSRange(location: 0, length: 0))
             host.textView.scrollToBeginningOfDocument(nil)
             highlight.schedule(store: store, language: b.language, delay: .zero)
@@ -67,13 +68,12 @@ extension AppState {
         }
         guard !savingIDs.contains(id), let url = fileURLs[id], let buffer = session.buffers[id] else { return }
         let acknowledgedHash = buffer.diskContentHash
-        let encoding = buffer.encoding
-        // A file that grew past the open limit is not hashed; its size and date stand in for the hash, so it
-        // still raises the banner (Reload then says why it can't) instead of being ignored.
+        // Stream raw bytes into SHA-256 directly: avoids decoding/re-encoding/normalizing the file on every
+        // focus or tab switch, and still detects external overwrites with binary or non-UTF-8 bytes.
         let diskHash = await Task.detached(priority: .utility) { () -> String? in
-            do { return try FileLoader.load(from: url, decoding: .prefer(encoding)).rawHash }
+            do { return try FileLoader.rawHash(of: url) }
             catch FileOpenError.fileTooLarge(let bytes) {
-                let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                let date = FileLoader.regularFileStats(at: url)?.modificationDate
                 return "oversize:\(bytes):\(date?.timeIntervalSinceReferenceDate ?? 0)"
             } catch { return nil }
         }.value
@@ -87,7 +87,13 @@ extension AppState {
             }
             return
         }
-        if diskHash == acknowledgedHash { return } // our own write, or no real change
+        if diskHash == acknowledgedHash {
+            if current.conflict == .missing {
+                session.buffers[id]?.conflict = .none
+                flushImmediately()
+            }
+            return // our own write, or no real change
+        }
         // Keep the text, selection, undo history and acknowledged disk hash until the user chooses.
         // Bytes other than the ones a Keep My Version was about bring the banner back.
         switch current.externalChange {
@@ -128,14 +134,24 @@ extension AppState {
 
     func handleMoved(_ id: UUID, to newURL: URL) {
         guard session.buffers[id] != nil else { return }
+        // Moving an open file to Trash is a deletion from the user's perspective; never rebind saves into Trash.
+        if newURL.pathComponents.contains(".Trash") || newURL.pathComponents.contains(".Trashes") {
+            if session.buffers[id]?.conflict != .missing {
+                session.buffers[id]?.conflict = .missing
+                Log.files.info("conflict ->missing (trashed)")
+                flushImmediately()
+            }
+            return
+        }
         let old = fileURLs[id]
-        _ = access.start(newURL)
+        let newStarted = access.start(newURL)
         if let bm = try? access.bookmark(for: newURL) { session.buffers[id]?.fileBookmark = bm }
         session.buffers[id]?.rememberFileURL(newURL)
         session.buffers[id]?.title = newURL.lastPathComponent
         fileURLs[id] = newURL
         monitors[id]?.update(url: newURL)
-        if let old { access.stop(old) }
+        // Only release the old scope if a new security scope was acquired (presenter-delivered URLs lack one).
+        if let old, newStarted { access.stop(old) }
         flushImmediately()
     }
 
@@ -196,8 +212,9 @@ extension AppState {
         panel.message = String(localized: "Locate “\(b.displayTitle)”")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         unregisterFile(id)
-        _ = access.start(url)
+        let started = access.start(url)
         guard let bm = try? access.bookmark(for: url) else {
+            if started { access.stop(url) }
             showToast(String(localized: "Bookmark failed"), error: true)
             return
         }

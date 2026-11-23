@@ -7,6 +7,8 @@ enum LargeFileSaveError: Error, Equatable {
     case externalChange
     /// The bytes an edit replaces are no longer in the file (rewritten in place): the edits cannot be applied.
     case editsNoLongerMatch
+    /// The index was evicted (e.g. memory pressure) or is not yet complete; rebuild before saving.
+    case notReady
     case cancelled
 }
 
@@ -53,7 +55,7 @@ enum LargeFileWriter {
 
     /// Blocking. `size` is how much of the file to write (what was indexed); `lineBreak` joins an edit's lines.
     static func write(source: LargeFileSource, size: Int, edits: LargeFileEdits, encoding: TextEncoding,
-                      lineBreak: String, replacement: LargeFileReplacement?, to tmp: URL,
+                      lineBreak: String, replacement: LargeFileReplacement?, bomLength: Int = 0, to tmp: URL,
                       isCancelled: () -> Bool, progress: (Double) -> Void) throws {
         let fd = open(tmp.path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw LargeFileSaveError.couldNotSave }
@@ -126,6 +128,14 @@ enum LargeFileWriter {
         }
 
         var position = 0
+        // Preserve leading BOM verbatim so a streaming replacement never strips or corrupts it.
+        if replacement != nil, bomLength > 0, bomLength <= size {
+            let bom = source.readDirect(offset: 0, count: bomLength)
+            if bom.count == bomLength {
+                try put(bom)
+                position = bomLength
+            }
+        }
         for e in edits.edits {
             // Never skip an edit: one past the end or overlapping another means the offsets are not this file's.
             guard e.start >= position, e.end <= size else { throw LargeFileSaveError.editsNoLongerMatch }
@@ -150,17 +160,22 @@ enum LargeFileWriter {
     static func install(_ tmp: URL, at url: URL, expected: LargeFileFingerprint?,
                         presenter: NSFilePresenter?) throws -> LargeFileFingerprint {
         let fm = FileManager.default
-        let previous = try? fm.attributesOfItem(atPath: url.path)
+        let initialTargetPath = url.resolvingSymlinksInPath().path
+        let previous = try? fm.attributesOfItem(atPath: initialTargetPath)
         var failure: Error?
         var coordError: NSError?
+        var writtenURL = url
         NSFileCoordinator(filePresenter: presenter).coordinate(writingItemAt: url, options: .forReplacing, error: &coordError) { dest in
+            let target = dest.resolvingSymlinksInPath()
+            writtenURL = target
             do {
-                if fm.fileExists(atPath: dest.path) {
-                    let now = LargeFileFingerprint.of(path: dest.path)
+                if fm.fileExists(atPath: target.path) {
+                    let now = LargeFileFingerprint.of(path: target.path)
                     if now != expected { throw LargeFileSaveError.externalChange }
-                    _ = try fm.replaceItemAt(dest, withItemAt: tmp)
+                    _ = try fm.replaceItemAt(target, withItemAt: tmp)
                 } else {
-                    try fm.moveItem(at: tmp, to: dest)
+                    if expected != nil { throw LargeFileSaveError.externalChange }
+                    try fm.moveItem(at: tmp, to: target)
                 }
             } catch {
                 failure = error
@@ -168,11 +183,12 @@ enum LargeFileWriter {
         }
         if let failure { throw failure is LargeFileSaveError ? failure : LargeFileSaveError.couldNotSave }
         if coordError != nil { throw LargeFileSaveError.couldNotSave }
+        let finalTargetPath = writtenURL.resolvingSymlinksInPath().path
         var attrs: [FileAttributeKey: Any] = [:]
         if let mode = previous?[.posixPermissions] { attrs[.posixPermissions] = mode }
         if let created = previous?[.creationDate] { attrs[.creationDate] = created }
-        if !attrs.isEmpty { try? fm.setAttributes(attrs, ofItemAtPath: url.path) }
-        guard let fingerprint = LargeFileFingerprint.of(path: url.path) else { throw LargeFileSaveError.couldNotSave }
+        if !attrs.isEmpty { try? fm.setAttributes(attrs, ofItemAtPath: finalTargetPath) }
+        guard let fingerprint = LargeFileFingerprint.of(path: finalTargetPath) else { throw LargeFileSaveError.couldNotSave }
         return fingerprint
     }
 }

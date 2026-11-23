@@ -67,7 +67,8 @@ enum CurlRunner {
     /// Throws `CancellationError` when the task is cancelled, otherwise `CurlFailure`.
     static func send(_ command: CurlCommand, configuration: URLSessionConfiguration = makeConfiguration()) async throws -> CurlResponse {
         if let maxTime = command.maxTime { configuration.timeoutIntervalForResource = maxTime }
-        let session = URLSession(configuration: configuration, delegate: RedirectPolicy(follow: command.followRedirects),
+        let session = URLSession(configuration: configuration,
+                                 delegate: RedirectPolicy(follow: command.followRedirects, originURL: command.url),
                                  delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         let clock = ContinuousClock()
@@ -192,14 +193,40 @@ enum CurlRunner {
     }
 }
 
-/// Stops at a redirect unless the command had `-L`; the 3xx response is then the result, as in curl.
+/// Stops at a redirect unless the command had `-L`; with `-L`, automatically follows only same-origin
+/// `http`/`https` redirects without HTTPS→HTTP downgrade so credentials and cookies are never forwarded cross-origin.
 private final class RedirectPolicy: NSObject, URLSessionTaskDelegate, Sendable {
     let follow: Bool
+    let originScheme: String
+    let originHost: String
+    let originPort: Int
 
-    init(follow: Bool) { self.follow = follow }
+    init(follow: Bool, originURL: URL) {
+        self.follow = follow
+        let scheme = originURL.scheme?.lowercased() ?? ""
+        self.originScheme = scheme
+        self.originHost = originURL.host?.lowercased() ?? ""
+        self.originPort = originURL.port ?? (scheme == "https" ? 443 : 80)
+    }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        completionHandler(follow ? request : nil)
+        guard follow, let nextURL = request.url,
+              let scheme = nextURL.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+            completionHandler(nil)
+            return
+        }
+        // Never downgrade HTTPS to HTTP, and do not automatically follow cross-origin redirects with request headers.
+        if originScheme == "https" && scheme != "https" {
+            completionHandler(nil)
+            return
+        }
+        let nextHost = nextURL.host?.lowercased() ?? ""
+        let nextPort = nextURL.port ?? (scheme == "https" ? 443 : 80)
+        guard scheme == originScheme, nextHost == originHost, nextPort == originPort else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
     }
 }

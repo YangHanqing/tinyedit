@@ -8,7 +8,7 @@ struct TranslationCredentialDraft {
     var showsSavedMask: Bool { hasSavedKey && !isEdited }
 
     mutating func edit(_ value: String) {
-        self.value = value
+        self.value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         isEdited = true
     }
 

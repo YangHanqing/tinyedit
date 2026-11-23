@@ -28,7 +28,10 @@ enum CommandLineTool {
         switch url.pathExtension {
         case pipeExtension: return .pipedText(url)
         case goToExtension:
-            guard let data = try? Data(contentsOf: url, options: .uncached), data.count < 64 * 1024,
+            guard let size = FileLoader.regularFileSize(at: url), size < 64 * 1024,
+                  let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+            defer { try? handle.close() }
+            guard let data = try? handle.read(upToCount: 64 * 1024), data.count < 64 * 1024,
                   let contents = String(data: data, encoding: .utf8) else { return nil }
             return goTo(parsing: contents)
         default: return nil
@@ -43,9 +46,22 @@ enum CommandLineTool {
         return .goTo(file: URL(fileURLWithPath: path), line: target.line, column: target.column)
     }
 
-    /// A request file the script wrote: in its spool folder, with a request extension.
+    /// A request file the script wrote: inside a known temporary spool folder, with a request extension.
     static func isSpooled(_ url: URL) -> Bool {
-        isRequest(url) && url.deletingLastPathComponent().lastPathComponent == spoolFolderName
+        guard isRequest(url) else { return false }
+        let parent = url.standardizedFileURL.deletingLastPathComponent()
+        guard parent.lastPathComponent == spoolFolderName else { return false }
+        let grandParent = parent.deletingLastPathComponent().resolvingSymlinksInPath().path
+        let allowedRoots = [
+            FileManager.default.temporaryDirectory.resolvingSymlinksInPath().path,
+            URL(fileURLWithPath: NSTemporaryDirectory()).resolvingSymlinksInPath().path,
+            URL(fileURLWithPath: "/tmp").resolvingSymlinksInPath().path,
+        ].map { $0.hasSuffix("/") && $0.count > 1 ? String($0.dropLast()) : $0 }
+        if allowedRoots.contains(where: { grandParent == $0 || grandParent.hasPrefix($0 + "/") }) {
+            return true
+        }
+        // `tinyedit` runs outside the app sandbox so its $TMPDIR is `/var/folders/.../T`.
+        return grandParent.hasPrefix("/private/var/folders/") && (grandParent.hasSuffix("/T") || grandParent.contains("/T/"))
     }
 
     // MARK: Installing

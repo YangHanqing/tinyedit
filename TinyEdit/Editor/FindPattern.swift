@@ -8,14 +8,29 @@ enum FindPattern {
     }
 
     nonisolated static func matches(_ regex: NSRegularExpression, in text: NSString, range: NSRange? = nil,
-                                    limit: Int = .max) -> [NSTextCheckingResult] {
+                                    limit: Int = .max, isCancelled: @Sendable () -> Bool = { false }) -> [NSTextCheckingResult] {
         var out: [NSTextCheckingResult] = []
-        regex.enumerateMatches(in: text as String, options: [], range: range ?? NSRange(location: 0, length: text.length)) { m, _, stop in
+        let target = range ?? NSRange(location: 0, length: text.length)
+        regex.enumerateMatches(in: text as String, options: [.reportProgress], range: target) { m, _, stop in
+            if isCancelled() { stop.pointee = true; return }
             guard let m, m.range.length > 0 else { return }
             out.append(m)
             if out.count >= limit { stop.pointee = true }
         }
         return out
+    }
+
+    /// The last non-empty match in `range` without retaining all earlier `NSTextCheckingResult` objects.
+    nonisolated static func lastMatch(_ regex: NSRegularExpression, in text: NSString, range: NSRange? = nil,
+                                      isCancelled: @Sendable () -> Bool = { false }) -> NSRange? {
+        var last: NSRange?
+        let target = range ?? NSRange(location: 0, length: text.length)
+        regex.enumerateMatches(in: text as String, options: [.reportProgress], range: target) { m, _, stop in
+            if isCancelled() { stop.pointee = true; return }
+            guard let m, m.range.length > 0 else { return }
+            last = m.range
+        }
+        return isCancelled() ? nil : last
     }
 
     nonisolated static func ranges(_ regex: NSRegularExpression, in text: NSString) -> [NSRange] {
@@ -27,7 +42,8 @@ enum FindPattern {
                                       template: String) -> String {
         let out = NSMutableString(string: text)
         for r in ranges.reversed() {
-            guard let m = regex.firstMatch(in: text as String, options: [], range: r), m.range == r else { continue }
+            guard let m = regex.firstMatch(in: text as String, options: [.withTransparentBounds], range: r),
+                  m.range == r else { continue }
             out.replaceCharacters(in: r, with: regex.replacementString(for: m, in: text as String, offset: 0, template: template))
         }
         return out as String
@@ -40,17 +56,18 @@ enum FindMatches {
 
     /// Every non-overlapping match, in document order.
     nonisolated static func ranges(of query: String, in text: NSString, caseSensitive: Bool, regex: Bool = false,
-                                   limit: Int = limit) -> (ranges: [NSRange], capped: Bool) {
+                                   limit: Int = limit, isCancelled: @Sendable () -> Bool = { false }) -> (ranges: [NSRange], capped: Bool) {
         guard !query.isEmpty else { return ([], false) }
         if regex {
             guard let re = FindPattern.regex(query, caseSensitive: caseSensitive) else { return ([], false) }
-            let found = FindPattern.matches(re, in: text, limit: limit + 1).map(\.range)
+            let found = FindPattern.matches(re, in: text, limit: limit + 1, isCancelled: isCancelled).map(\.range)
             return (Array(found.prefix(limit)), found.count > limit)
         }
         let options: NSString.CompareOptions = caseSensitive ? [.literal] : [.literal, .caseInsensitive]
         var ranges: [NSRange] = []
         var from = 0
         while from < text.length {
+            if isCancelled() { return ([], false) }
             let r = text.range(of: query, options: options, range: NSRange(location: from, length: text.length - from))
             if r.location == NSNotFound { break }
             if ranges.count == limit { return (ranges, true) }

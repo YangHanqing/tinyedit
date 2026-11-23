@@ -292,6 +292,7 @@ extension AppState {
         previewTask?.cancel()
         guard previewVisible, let id = session.selectedBufferID, let store = stores[id] else {
             if !previewBlocks.isEmpty { previewBlocks = [] }
+            if !previewVisible { previewReader.selection.invalidateDocument() }
             return
         }
         previewTask = Task { [weak self] in

@@ -284,6 +284,53 @@ final class LargeFileTests: XCTestCase {
         XCTAssertNoThrow(try LargeFileWriter.install(tmp, at: url, expected: now, presenter: nil))
         XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "ONE\n")
     }
+
+    /// A CRLF straddling the 16 KiB split boundary must stay together, and an in-place rewrite or tail-row
+    /// append must be caught instead of silently overwriting or invalidating Save As.
+    @MainActor
+    func testBoundaryCRLFInPlaceConflictAndDirtyTrimProtection() async throws {
+        let prefix = String(repeating: "a", count: LargeFileRowSplitter.maxRowBytes - 1)
+        let crlfURL = try file(Data("\(prefix)\r\nnext\r\n".utf8), "crlf-boundary.txt")
+        let (s, idx) = try indexed(crlfURL, .utf8)
+        let rows = idx.rows(0..<idx.progress.rows, source: s)
+        XCTAssertEqual(rows[0].contentEnd, rows[0].end)   // soft-cut before CR, not between CR and LF
+        XCTAssertEqual(rows[1].end - rows[1].contentEnd, 2)
+
+        // Same-inode in-place truncation must fail save(overwrite: false) with .externalChange,
+        // and critical memory pressure must keep the index of a dirty tab intact.
+        let liveURL = try file(Data("row0\nrow1\nrow2".utf8), "live-inplace.txt")
+        let doc = LargeFileDocument(id: UUID(), encoding: .utf8)
+        doc.attach(try LargeFileSource(url: liveURL), encoding: .utf8)
+        while !doc.progress.complete { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(doc.replaceRows(2...2, with: "ROW2", actionName: "Edit"))
+
+        doc.trim(releaseIndex: true)
+        XCTAssertNotNil(doc.index, "dirty large-file tab keeps its index under critical memory pressure")
+
+        // Appending while the last row is edited surfaces a conflict where Save As stays available.
+        let appendHandle = try FileHandle(forWritingTo: liveURL)
+        try appendHandle.seekToEnd()
+        try appendHandle.write(contentsOf: Data("\nmore".utf8))
+        try appendHandle.close()
+        XCTAssertEqual(doc.diskChange(at: liveURL.path), .conflict(canSaveAs: true))
+        let conflictSave = await doc.save(to: liveURL, overwrite: false, presenter: nil)
+        XCTAssertEqual(conflictSave.failure, .externalChange)
+
+        // A same-size change away from both the edit and the sampled bytes must still be reported.
+        let rewriteURL = try file(Data(String(repeating: "original line\n", count: 5_000).utf8), "same-size.txt")
+        let rewrite = LargeFileDocument(id: UUID(), encoding: .utf8)
+        rewrite.attach(try LargeFileSource(url: rewriteURL), encoding: .utf8)
+        while !rewrite.progress.complete { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(rewrite.replaceRows(0...0, with: "edited line", actionName: "Edit"))
+        let rewriteHandle = try FileHandle(forWritingTo: rewriteURL)
+        try rewriteHandle.seek(toOffset: 10_000)
+        try rewriteHandle.write(contentsOf: Data("X".utf8))
+        try rewriteHandle.close()
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(3)], ofItemAtPath: rewriteURL.path)
+        XCTAssertEqual(rewrite.diskChange(at: rewriteURL.path), .conflict(canSaveAs: true))
+        let rewriteSave = await rewrite.save(to: rewriteURL, overwrite: false, presenter: nil)
+        XCTAssertEqual(rewriteSave.failure, .externalChange)
+    }
 }
 
 private extension Result {

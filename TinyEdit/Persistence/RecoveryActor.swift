@@ -4,6 +4,8 @@ struct FlushItem: Sendable {
     var id: UUID
     var generation: UInt64
     var logicalLF: String
+    /// Residency epoch of `id` in this window; incremented on remove/readmit so stale pre-transfer flushes drop.
+    var epoch: UInt64 = 0
 }
 
 struct FlushOutcome: Sendable {
@@ -20,6 +22,7 @@ actor RecoveryActor {
     private let sessions: SessionStore
     private var gateOpen = false
     private var latest: [UUID: UInt64] = [:]
+    private var epochs: [UUID: UInt64] = [:]
     private var lastManifestSeq: UInt64 = 0
 
     init(root: URL) {
@@ -31,7 +34,7 @@ actor RecoveryActor {
 
     func currentGenerations() -> [UUID: UInt64] { latest }
 
-    /// Writes snapshots (dropping stale generations), then the manifest if it is newer than the last one.
+    /// Writes snapshots (dropping stale epochs/generations), then the manifest if it is newer than the last one.
     func flush(items: [FlushItem], manifest: SessionFile, seq: UInt64) -> FlushOutcome {
         guard gateOpen else { return FlushOutcome(ok: true, written: [:], diskFull: false) }
         var written: [UUID: UInt64] = [:]
@@ -47,6 +50,8 @@ actor RecoveryActor {
         }
 
         for item in items {
+            let currentEpoch = epochs[item.id] ?? 0
+            if item.epoch != currentEpoch { continue }
             if let known = latest[item.id], item.generation < known { continue } // stale: dropped before rename
             do {
                 try recovery.writeSnapshot(id: item.id, logicalLF: item.logicalLF)
@@ -63,12 +68,32 @@ actor RecoveryActor {
         return FlushOutcome(ok: ok, written: written, diskFull: diskFull)
     }
 
-    /// Discard or clean close: manifest (with tombstone) first, then delete the snapshot. No content write.
-    func remove(id: UUID, manifest: SessionFile, seq: UInt64) -> FlushOutcome {
+    /// Discard or clean close: flush any pending live snapshots first so the manifest never names a buffer
+    /// without a snapshot, then write the manifest (with tombstone), then delete the removed snapshot.
+    func remove(id: UUID, pendingItems: [FlushItem] = [], manifest: SessionFile, seq: UInt64) -> FlushOutcome {
         guard gateOpen else { return FlushOutcome(ok: true, written: [:], diskFull: false) }
+        epochs[id, default: 0] &+= 1
         latest[id] = .max // any content op still in flight for this id is now stale
+        var written: [UUID: UInt64] = [:]
         var ok = true
-        if seq > lastManifestSeq {
+        var diskFull = false
+        for item in pendingItems where item.id != id {
+            let currentEpoch = epochs[item.id] ?? 0
+            if item.epoch != currentEpoch { continue }
+            if let known = latest[item.id], item.generation < known { continue }
+            do {
+                try recovery.writeSnapshot(id: item.id, logicalLF: item.logicalLF)
+                latest[item.id] = max(latest[item.id] ?? 0, item.generation)
+                written[item.id] = item.generation
+            } catch {
+                ok = false
+                let ns = error as NSError
+                if ns.domain == NSPOSIXErrorDomain && ns.code == Int(ENOSPC) { diskFull = true }
+                if ns.domain == NSCocoaErrorDomain && ns.code == NSFileWriteOutOfSpaceError { diskFull = true }
+                Log.recovery.error("recovery write failed before removal: \(ns.domain, privacy: .public) \(ns.code)")
+            }
+        }
+        if ok, seq > lastManifestSeq {
             do { try sessions.save(manifest); lastManifestSeq = seq } catch {
                 ok = false
                 Log.recovery.error("manifest write failed on removal: \((error as NSError).code)")
@@ -82,12 +107,16 @@ actor RecoveryActor {
                 }
             }
         }
-        return FlushOutcome(ok: ok, written: [:], diskFull: false)
+        return FlushOutcome(ok: ok, written: written, diskFull: diskFull)
     }
 
-    /// A buffer this window removed comes back (a tab moved out and in again, same id): its writes count again.
-    func readmit(_ id: UUID) {
-        if latest[id] == .max { latest[id] = nil }
+    /// A buffer this window removed comes back (a tab moved out and in again, same id): bump its epoch
+    /// so no pre-transfer flush can outlive it, and return the new epoch for future flushes.
+    @discardableResult
+    func readmit(_ id: UUID) -> UInt64 {
+        epochs[id, default: 0] &+= 1
+        latest[id] = nil
+        return epochs[id] ?? 0
     }
 
     /// Deletes a snapshot whose tombstone is already in a completed manifest.

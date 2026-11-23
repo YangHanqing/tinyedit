@@ -119,10 +119,18 @@ enum UpdateChecker {
         var request = URLRequest(url: latestReleaseAPI)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("TinyEdit", forHTTPHeaderField: "User-Agent")
-        guard let (data, response) = try? await session.data(for: request),
-              let http = response as? HTTPURLResponse, http.statusCode == 200,
-              data.count <= 4 * 1024 * 1024 else { return nil }
-        return parseRelease(data)
+        guard let (bytes, response) = try? await session.bytes(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+        let maxBytes = 4 * 1024 * 1024
+        if http.expectedContentLength > Int64(maxBytes) { return nil }
+        var body: [UInt8] = []
+        do {
+            for try await byte in bytes {
+                body.append(byte)
+                if body.count > maxBytes { return nil }
+            }
+        } catch { return nil }
+        return parseRelease(Data(body))
     }
 
     private struct ReleaseJSON: Decodable {
@@ -136,15 +144,28 @@ enum UpdateChecker {
         guard let json = try? JSONDecoder().decode(ReleaseJSON.self, from: data),
               json.draft != true, json.prerelease != true,
               let tag = json.tag_name, let version = parseVersion(tag) else { return nil }
-        return Release(version: version, versionString: version.map(String.init).joined(separator: "."),
-                       page: safePage(json.html_url))
+        let versionString = version.map(String.init).joined(separator: ".")
+        let page = releasePage(forTag: tag) ?? safePage(json.html_url)
+        return Release(version: version, versionString: versionString, page: page)
     }
 
-    /// Only a page of this repository on github.com is opened; anything else falls back to the releases page.
+    /// Construct the GitHub release page directly from the fixed repository URL and validated tag.
+    nonisolated private static func releasePage(forTag tag: String) -> URL? {
+        let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 32,
+              trimmed.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-" || $0 == "_") }),
+              !trimmed.contains("..") else { return nil }
+        return releasesPage.appendingPathComponent("tag").appendingPathComponent(trimmed)
+    }
+
+    /// Only a normalized page of this repository on github.com is opened; anything else falls back to the releases page.
     nonisolated private static func safePage(_ string: String?) -> URL {
         guard let string, let url = URL(string: string), url.scheme == "https",
+              url.user == nil, url.password == nil, url.port == nil,
               url.host?.lowercased() == "github.com",
-              url.path.lowercased().hasPrefix("/yanghanqing/tinyedit/") else { return releasesPage }
+              !string.lowercased().contains("%2e"),
+              !url.pathComponents.contains(".."),
+              url.standardized.path.lowercased().hasPrefix("/yanghanqing/tinyedit/releases/") else { return releasesPage }
         return url
     }
 

@@ -36,11 +36,11 @@ extension AppState {
         }
         leaveFullPreview()
         let sel = host.textView.selectedRange()
-        if sel.length > 0, sel.length < 1000, let ns = liveText {
+        if let ns = liveText, sel.length > 0, sel.length < 1000, NSMaxRange(sel) <= ns.length {
             let s = ns.substring(with: sel)
             if !s.contains("\n") { find.query = find.regex ? NSRegularExpression.escapedPattern(for: s) : s }
         }
-        findAnchor = sel.location
+        findAnchor = min(sel.location, liveText?.length ?? 0)
         if goToLineVisible { goToLineVisible = false }
         find.visible = true
         if replace { find.showReplace = true }
@@ -50,6 +50,8 @@ extension AppState {
     }
 
     func hideFind() {
+        findStepTask?.cancel()
+        findStepTask = nil
         if let doc = activeLargeFile {
             doc.highlightsMatches = false
             if doc.isFiltering { doc.setFilter(false) }
@@ -66,6 +68,8 @@ extension AppState {
     /// Typing in the find field or toggling case: count and highlight again, and select the first
     /// match from where the search started.
     func findQueryChanged() {
+        findStepTask?.cancel()
+        findStepTask = nil
         let invalid = find.regex && !find.query.isEmpty && FindPattern.regex(find.query, caseSensitive: true) == nil
         if find.invalidPattern != invalid { find.invalidPattern = invalid }
         if let doc = activeLargeFile {
@@ -97,13 +101,13 @@ extension AppState {
         if previewVisible, previewReader.findVisible { return previewReader.nextMatch() }
         if activeLargeFile != nil { return largeFindNext(forward: true) }
         if !find.visible { showFind(replace: false) }
-        guard !find.query.isEmpty, let ns = liveText else { return }
+        guard !find.query.isEmpty, let store = activeStore, let ns = liveText else { return }
         let sel = host.textView.selectedRange()
-        let start = sel.location + sel.length
+        let start = min(NSMaxRange(sel), ns.length)
         if find.regex {
             guard let re = findRegex else { return }
-            let after = FindPattern.matches(re, in: ns, range: NSRange(location: start, length: ns.length - start), limit: 1).first
-            return reveal(after?.range ?? FindPattern.matches(re, in: ns, limit: 1).first?.range ?? NSRange(location: NSNotFound, length: 0))
+            stepRegex(re, store: store, forward: true, from: start)
+            return
         }
         var r = ns.range(of: find.query, options: searchOptions, range: NSRange(location: start, length: ns.length - start))
         if r.location == NSNotFound {
@@ -116,20 +120,54 @@ extension AppState {
         if previewVisible, previewReader.findVisible { return previewReader.nextMatch(forward: false) }
         if activeLargeFile != nil { return largeFindNext(forward: false) }
         if !find.visible { showFind(replace: false) }
-        guard !find.query.isEmpty, let ns = liveText else { return }
+        guard !find.query.isEmpty, let store = activeStore, let ns = liveText else { return }
         let sel = host.textView.selectedRange()
+        let start = min(sel.location, ns.length)
         if find.regex {
-            // Edits are capped at 64 MB, and a backwards regex search has to look at everything before.
             guard let re = findRegex else { return }
-            let before = FindPattern.matches(re, in: ns, range: NSRange(location: 0, length: sel.location)).last
-            return reveal(before?.range ?? FindPattern.matches(re, in: ns).last?.range ?? NSRange(location: NSNotFound, length: 0))
+            stepRegex(re, store: store, forward: false, from: start)
+            return
         }
         var r = ns.range(of: find.query, options: searchOptions.union(.backwards),
-                         range: NSRange(location: 0, length: sel.location))
+                         range: NSRange(location: 0, length: start))
         if r.location == NSNotFound {
             r = ns.range(of: find.query, options: searchOptions.union(.backwards), range: NSRange(location: 0, length: ns.length))
         }
         reveal(r)
+    }
+
+    /// Runs regex Find Next / Previous off the main thread with progress-based cancellation so
+    /// backtracking patterns cannot hang the UI and Find Previous never retains all earlier matches.
+    private func stepRegex(_ re: NSRegularExpression, store: BufferTextStore, forward: Bool, from offset: Int) {
+        findStepTask?.cancel()
+        let generation = store.generation
+        let query = find.query
+        let caseSensitive = find.caseSensitive
+        let text = store.logicalString()
+        findStepTask = Task { [weak self] in
+            let work = Task.detached(priority: .userInitiated) { () -> NSRange? in
+                let ns = text as NSString
+                let clamped = min(max(0, offset), ns.length)
+                let cancelled: @Sendable () -> Bool = { Task.isCancelled }
+                if forward {
+                    let after = FindPattern.matches(re, in: ns, range: NSRange(location: clamped, length: ns.length - clamped),
+                                                    limit: 1, isCancelled: cancelled).first?.range
+                    if let after { return after }
+                    if Task.isCancelled { return nil }
+                    return FindPattern.matches(re, in: ns, limit: 1, isCancelled: cancelled).first?.range
+                } else {
+                    let before = FindPattern.lastMatch(re, in: ns, range: NSRange(location: 0, length: clamped),
+                                                       isCancelled: cancelled)
+                    if let before { return before }
+                    if Task.isCancelled { return nil }
+                    return FindPattern.lastMatch(re, in: ns, isCancelled: cancelled)
+                }
+            }
+            let hit = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
+            guard let self, !Task.isCancelled, self.activeStore === store, store.generation == generation,
+                  self.find.regex, self.find.query == query, self.find.caseSensitive == caseSensitive else { return }
+            self.reveal(hit ?? NSRange(location: NSNotFound, length: 0))
+        }
     }
 
     /// The highlight of the current match shows where it is; the card shows "No matches" when there is none.
@@ -144,9 +182,10 @@ extension AppState {
     private func selectionMatchesQuery() -> Bool {
         guard let ns = liveText else { return false }
         let sel = host.textView.selectedRange()
-        guard sel.length > 0, !find.query.isEmpty else { return false }
+        guard sel.length > 0, NSMaxRange(sel) <= ns.length, !find.query.isEmpty else { return false }
         if find.regex {
-            guard let re = findRegex, let m = re.firstMatch(in: ns as String, options: [], range: sel) else { return false }
+            guard let re = findRegex,
+                  let m = re.firstMatch(in: ns as String, options: [.withTransparentBounds], range: sel) else { return false }
             return m.range == sel
         }
         return ns.substring(with: sel).compare(find.query, options: searchOptions) == .orderedSame
@@ -159,7 +198,8 @@ extension AppState {
         if selectionMatchesQuery() {
             let sel = tv.selectedRange()
             var replacement = find.replacement
-            if let re = findRegex, let ns = liveText, let m = re.firstMatch(in: ns as String, options: [], range: sel) {
+            if let re = findRegex, let ns = liveText, NSMaxRange(sel) <= ns.length,
+               let m = re.firstMatch(in: ns as String, options: [.withTransparentBounds], range: sel) {
                 replacement = re.replacementString(for: m, in: ns as String, offset: 0, template: find.replacement)
             }
             tv.insertText(replacement, replacementRange: sel) // one undo step
@@ -193,11 +233,16 @@ extension AppState {
         guard !ranges.isEmpty else { return }
         let tv = host.textView
         let um = tv.undoManager
+        tv.breakUndoCoalescing()
         um?.beginUndoGrouping()
+        tv.textStorage?.beginEditing()
+        var appliedAny = false
         for (r, replacement) in zip(ranges, replacements).reversed() where tv.shouldChangeText(in: r, replacementString: replacement) {
             tv.replaceCharacters(in: r, with: replacement)
-            tv.didChangeText()
+            appliedAny = true
         }
+        tv.textStorage?.endEditing()
+        if appliedAny { tv.didChangeText() }
         um?.endUndoGrouping()
         showToast(String(localized: "Replaced \(ranges.count)"))
     }

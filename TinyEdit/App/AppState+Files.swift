@@ -81,7 +81,7 @@ extension AppState {
             guard hasRoomForTab else { overLimit += 1; continue }
 
             let started = access.start(url)
-            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+            let size = FileLoader.regularFileSize(at: url) ?? 0
             if mode == .large || (mode == .automatic && size > LargeFilePolicy.threshold) {
                 if let id = await openLargeURL(url, started: started) {
                     firstNew = firstNew ?? id
@@ -167,7 +167,7 @@ extension AppState {
             return nil
         }
         do {
-            return try await openLargeFile(url)   // the tab keeps the scope, as an editor tab does
+            return try await openLargeFile(url, ownsScope: started)
         } catch {
             if started { access.stop(url) }
             Log.files.error("large open failed: \((error as NSError).domain, privacy: .public) \((error as NSError).code)")
@@ -217,12 +217,33 @@ extension AppState {
         }
     }
 
+    /// Serializes saves for the same buffer so overlapping ⌘S / Save All / Save As calls never race
+    /// `savingIDs`, overwrite newer disk bytes, or clobber hashes.
+    private func serializedSave<T: Sendable>(for id: UUID, _ operation: @escaping @MainActor () async -> T) async -> T {
+        let previous = saveQueues[id]
+        let box = Task<T, Never> { @MainActor in
+            await previous?.value
+            return await operation()
+        }
+        let sentinel = Task<Void, Never> { @MainActor in _ = await box.value }
+        saveQueues[id] = sentinel
+        let value = await box.value
+        if saveQueues[id] == sentinel { saveQueues[id] = nil }
+        return value
+    }
+
     /// Untitled and broken-bookmark buffers go through Save As. External conflicts confirm first.
     @discardableResult
     func saveFlow(_ id: UUID) async -> Bool {
+        await serializedSave(for: id) {
+            await self.saveFlowLocked(id)
+        }
+    }
+
+    private func saveFlowLocked(_ id: UUID) async -> Bool {
         guard !transferring, !closing else { return false }
         guard let b = session.buffers[id] else { return false }
-        guard !b.isUntitled, let url = fileURLs[id] else { return await saveAsFlow(id) }
+        guard !b.isUntitled, let url = fileURLs[id] else { return await saveAsFlowLocked(id) }
         // A large-file tab without edits has nothing to write.
         if let doc = largeFiles[id], !doc.hasEdits, doc.pendingEdits == nil, b.conflict == .none { return true }
         if b.conflict == .external { return await confirmedOverwriteSave(id, url: url) }
@@ -246,7 +267,7 @@ extension AppState {
         case .alertFirstButtonReturn:
             return await performSave(id: id, url: url, overwrite: true, presenter: monitors[id]) == .saved
         case .alertSecondButtonReturn:
-            return await saveAsFlow(id)
+            return await saveAsFlowLocked(id)
         default:
             return false // Cancel writes nothing
         }
@@ -255,6 +276,12 @@ extension AppState {
     /// `replacement` is a Replace All too large for a large-file tab's edits, written into the saved file.
     @discardableResult
     func saveAsFlow(_ id: UUID, replacement: LargeFileReplacement? = nil) async -> Bool {
+        await serializedSave(for: id) {
+            await self.saveAsFlowLocked(id, replacement: replacement)
+        }
+    }
+
+    private func saveAsFlowLocked(_ id: UUID, replacement: LargeFileReplacement? = nil) async -> Bool {
         guard !transferring, !closing else { return false }
         guard let b = session.buffers[id] else { return false }
         let panel = NSSavePanel()
@@ -282,6 +309,11 @@ extension AppState {
             if started { access.stop(url) }
             return false
         }
+        // The tab may have been closed while the asynchronous save was in flight.
+        guard session.buffers[id] != nil else {
+            if started { access.stop(url) }
+            return false
+        }
         if sameFile {
             if started { access.stop(url) }
         } else {
@@ -292,6 +324,7 @@ extension AppState {
 
     /// Save As to a new location: stop the old scope, take the new bookmark, move the presenter, retitle.
     private func rebind(_ id: UUID, to url: URL) {
+        guard session.buffers[id] != nil else { return }
         let oldExt = fileURLs[id]?.pathExtension ?? ""
         // The new URL's scope was started by the caller; unregisterFile only releases the old one.
         unregisterFile(id)
@@ -479,12 +512,21 @@ extension AppState {
     @discardableResult
     func closeTabAsync(_ id: UUID) async -> Bool {
         guard !transferring, !closing else { return false }
+        if savingIDs.contains(id) {
+            await saveQueues[id]?.value
+            guard !transferring, !closing else { return false }
+        }
         guard let b = session.buffers[id] else { return true }
-        if !isDirtyNow(id) { removeBuffer(id); return true }
+        if !needsCloseConfirmation(id) { removeBuffer(id); return true }
 
         let alert = NSAlert()
-        alert.messageText = String(localized: "Do you want to save the changes to “\(b.displayTitle)”?")
-        alert.informativeText = String(localized: "Your changes will be lost if you don’t save them.")
+        if b.conflict == .missing && !isDirtyNow(id) {
+            alert.messageText = String(localized: "File is missing: \(b.displayTitle).")
+            alert.informativeText = String(localized: "Your changes will be lost if you don’t save them.")
+        } else {
+            alert.messageText = String(localized: "Do you want to save the changes to “\(b.displayTitle)”?")
+            alert.informativeText = String(localized: "Your changes will be lost if you don’t save them.")
+        }
         alert.addButton(withTitle: String(localized: "Save"))          // default button: Return must not discard
         alert.addButton(withTitle: String(localized: "Discard"))
         alert.addButton(withTitle: String(localized: "Cancel"))
@@ -492,9 +534,10 @@ extension AppState {
         alert.buttons[2].keyEquivalent = "\u{1b}"  // Escape cancels
         switch alert.runModal() {
         case .alertFirstButtonReturn:
-            guard await saveFlow(id) else { return false }
+            let saved = b.conflict == .missing ? await saveAsFlow(id) : await saveFlow(id)
+            guard saved else { return false }
             guard session.buffers[id] != nil else { return true }
-            if isDirtyNow(id) { return false } // typed during the save: stay open
+            if needsCloseConfirmation(id) { return false } // typed during the save: stay open
             removeBuffer(id)
             return true
         case .alertSecondButtonReturn:
@@ -612,6 +655,7 @@ extension AppState {
         if diff?.sourceID == id { closeDiff(refocus: false) }
         languageDetectionTasks[id]?.cancel(); languageDetectionTasks[id] = nil
         pasteTasks[id]?.cancel(); pasteTasks[id] = nil; pasteTokens[id] = nil
+        imageTextJobs[id]?.task.cancel(); imageTextJobs[id] = nil
         curlJobs[id]?.task.cancel(); curlJobs[id] = nil; curlBodies[id] = nil; curlCommands[id] = nil
         curlSources[id] = nil
         stores[id]?.invalidate()
@@ -621,6 +665,7 @@ extension AppState {
         unregisterFile(id)
         bookmarkBroken.remove(id)
         writtenGeneration[id] = nil
+        recoveryEpochs[id] = nil
         let wasSelected = session.selectedBufferID == id
         session.tabOrder.remove(at: index)
         session.buffers[id] = nil
@@ -631,13 +676,16 @@ extension AppState {
             session.selectedBufferID = session.tabOrder.indices.contains(index) ? session.tabOrder[index] : session.tabOrder.last
         }
 
+        // Flush any newly added/unflushed live buffers BEFORE publishing the manifest so session.json
+        // never references a buffer without a snapshot on disk.
+        let pending = pendingItems()
         let manifest = makeManifest()
         manifestSeq += 1
         let seq = manifestSeq
         let previous = pendingRemovals[id]
         pendingRemovals[id] = Task { [weak self, recoveryActor] in
             await previous?.value
-            let out = await recoveryActor.remove(id: id, manifest: manifest, seq: seq)
+            let out = await recoveryActor.remove(id: id, pendingItems: pending, manifest: manifest, seq: seq)
             self?.handleOutcome(out)
             if self?.pendingRemovals[id] != nil { self?.pendingRemovals[id] = nil }
         }

@@ -18,6 +18,7 @@ final class EditorTextHost: NSObject, NSTextViewDelegate {
     private var settings = EditorSettings()
 
     var onSelectionChange: ((BufferTextStore) -> Void)?
+    var onStoreActivated: ((BufferTextStore) -> Void)?
     var onFileDrop: (([URL], Int) -> Void)? {
         didSet { textView.onFileDrop = onFileDrop }
     }
@@ -108,8 +109,13 @@ final class EditorTextHost: NSObject, NSTextViewDelegate {
         let loc = min(sel.location, length)
         textView.setSelectedRange(NSRange(location: loc, length: min(sel.length, length - loc)))
         let fraction = store.viewState.scrollFraction
-        DispatchQueue.main.async { [weak self] in self?.restoreScroll(fraction) }
+        let swap = contentSwaps
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.contentSwaps == swap, self.activeStore === store else { return }
+            self.restoreScroll(fraction)
+        }
         onSelectionChange?(store)
+        onStoreActivated?(store)
         refreshRuler()
         textView.refreshInlineCalculation()
     }

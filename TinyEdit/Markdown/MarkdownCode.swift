@@ -13,7 +13,8 @@ enum MarkdownCode {
     static func spans(_ code: String, hint: String?) -> [HighlightSpan] {
         guard code.utf8.count <= HighlightPolicy.fullLimit else { return [] }
         let spans = SyntaxHighlighter.spans(language: language(hint), text: code, limit: nil)
-        cache.setObject(Spans(spans), forKey: key(code, hint: hint), cost: spans.count)
+        let cost = max(1, code.utf8.count + spans.count * 16)
+        cache.setObject(Spans(spans), forKey: key(code, hint: hint), cost: cost)
         return spans
     }
 
@@ -30,7 +31,8 @@ enum MarkdownCode {
 
     private static let cache: NSCache<NSString, Spans> = {
         let cache = NSCache<NSString, Spans>()
-        cache.totalCostLimit = 400_000
+        cache.countLimit = 400
+        cache.totalCostLimit = 16 * 1_048_576
         return cache
     }()
 

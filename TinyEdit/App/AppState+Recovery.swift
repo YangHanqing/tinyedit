@@ -27,14 +27,16 @@ extension AppState {
     }
 
     /// Items whose generation has not been written yet. Copies strings only when the generation changed.
-    private func pendingItems() -> [FlushItem] {
+    func pendingItems() -> [FlushItem] {
         stores.values.compactMap { store in
             guard session.buffers[store.id] != nil, writtenGeneration[store.id] != store.generation else { return nil }
-            return FlushItem(id: store.id, generation: store.generation, logicalLF: store.logicalString())
+            return FlushItem(id: store.id, generation: store.generation, logicalLF: store.logicalString(),
+                             epoch: recoveryEpochs[store.id] ?? 0)
         } + largeFiles.values.compactMap { doc in
             // A large-file tab's snapshot is its edits, never the file.
             guard session.buffers[doc.id] != nil, writtenGeneration[doc.id] != doc.generation else { return nil }
-            return FlushItem(id: doc.id, generation: doc.generation, logicalLF: doc.snapshotEdits.snapshotText())
+            return FlushItem(id: doc.id, generation: doc.generation, logicalLF: doc.snapshotEdits.snapshotText(),
+                             epoch: recoveryEpochs[doc.id] ?? 0)
         }
     }
 
@@ -184,12 +186,14 @@ extension AppState {
                 buffer.dirty = true
             }
             if !settings.suggestLanguageWhileTyping { buffer.languageSuggestion = nil }
+            let reusableSnapshot = entry.metadata.map { $0.recoveryFile == "\(entry.id.uuidString).snapshot" } ?? false
             if buffer.largeFile != nil {
                 if let edits = LargeFileEdits.fromSnapshot(entry.text) {
                     makeLargeFile(for: buffer, edits: edits)
                     LargeFileMemory.start()
                     session.buffers[buffer.id] = buffer
                     session.tabOrder.append(buffer.id)
+                    if reusableSnapshot { writtenGeneration[buffer.id] = 0 }
                     continue
                 }
                 // An unreadable edits snapshot is kept as text, never applied to the file.
@@ -201,6 +205,7 @@ extension AppState {
             makeStore(for: buffer, text: entry.text)
             session.buffers[buffer.id] = buffer
             session.tabOrder.append(buffer.id)
+            if reusableSnapshot { writtenGeneration[buffer.id] = 0 }
         }
         session.keepPinnedFirst()   // an entry the manifest's order missed is appended last
         if let sel = plan.selectedID, session.buffers[sel] != nil {

@@ -118,7 +118,7 @@ struct CurlCommand: Equatable, Sendable {
         "unix-socket": .unsupportedValue, "abstract-unix-socket": .unsupportedValue, "dns-servers": .unsupportedValue,
         "doh-url": .unsupportedValue, "local-port": .unsupportedValue, "aws-sigv4": .unsupportedValue,
         "request-target": .unsupportedValue, "continue-at": .unsupportedValue, "quote": .unsupportedValue,
-        "get": .get, "head": .head, "location": .location, "location-trusted": .location, "no-location": .noLocation,
+        "get": .get, "head": .head, "location": .location, "location-trusted": .unsupported, "no-location": .noLocation,
         "silent": .ignored, "show-error": .ignored, "verbose": .ignored, "include": .ignored, "fail": .ignored,
         "fail-with-body": .ignored, "fail-early": .ignored, "globoff": .ignored, "no-buffer": .ignored,
         "remote-name": .ignored, "remote-header-name": .ignored, "remote-time": .ignored, "compressed": .ignored,
@@ -322,14 +322,15 @@ struct CurlCommand: Equatable, Sendable {
             // URLSession sets these itself, Accept-Encoding included so that it can decode the body. A Host that
             // names another server cannot be sent.
             headers.removeAll { ["accept-encoding", "content-length", "connection"].contains($0.name.lowercased()) }
-            if let i = headers.firstIndex(where: { $0.name.lowercased() == "host" }) {
-                let named = headers[i].value.lowercased()
-                let host = components.host?.lowercased() ?? ""
-                if named != host, named != host + (components.port.map { ":\($0)" } ?? ""), unsupported == nil {
+            let expectedHost = components.host?.lowercased() ?? ""
+            let expectedHostPort = expectedHost + (components.port.map { ":\($0)" } ?? "")
+            for header in headers where header.name.lowercased() == "host" {
+                let named = header.value.trimmingCharacters(in: .whitespaces).lowercased()
+                if named != expectedHost, named != expectedHostPort, unsupported == nil {
                     unsupported = "-H Host"
                 }
-                headers.remove(at: i)
             }
+            headers.removeAll { $0.name.lowercased() == "host" }
             func hasHeader(_ name: String) -> Bool {
                 headers.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
             }
@@ -338,9 +339,10 @@ struct CurlCommand: Equatable, Sendable {
             let hasData = !dataParts.isEmpty || !jsonParts.isEmpty
             if hasData, !formParts.isEmpty, unsupported == nil { unsupported = "-F" }
             if get, hasData {
-                // -G moves the data into the query.
-                let data = (dataParts + jsonParts).joined(separator: "&")
-                let query = components.percentEncodedQuery.map { $0 + "&" + data } ?? data
+                // -G moves the data into the query; sanitize raw bytes so percentEncodedQuery never traps.
+                let data = (dataParts + jsonParts).map(CurlCommand.sanitizePercentEncodedQuery).joined(separator: "&")
+                let existing = components.percentEncodedQuery
+                let query = existing.map { $0.isEmpty ? data : $0 + "&" + data } ?? data
                 components.percentEncodedQuery = query
             } else if !jsonParts.isEmpty {
                 body = Data((dataParts.joined(separator: "&") + jsonParts.joined()).utf8)
@@ -381,6 +383,42 @@ struct CurlCommand: Equatable, Sendable {
             ? "http://" + trimmed : trimmed
         guard let url = URL(string: withScheme) else { return nil }
         return URLComponents(url: url, resolvingAgainstBaseURL: false)
+    }
+
+    /// Makes a raw `-G -d` / `--json` query piece valid for `URLComponents.percentEncodedQuery`:
+    /// keeps valid `%XX` escapes and query-allowed ASCII characters, and percent-encodes everything else.
+    private static func sanitizePercentEncodedQuery(_ raw: String) -> String {
+        func isHex(_ b: UInt8) -> Bool {
+            (0x30...0x39).contains(b) || (0x41...0x46).contains(b) || (0x61...0x66).contains(b)
+        }
+        func isQueryAllowedASCII(_ b: UInt8) -> Bool {
+            (0x30...0x39).contains(b) || (0x41...0x5A).contains(b) || (0x61...0x7A).contains(b)
+                || b == 0x2D || b == 0x2E || b == 0x5F || b == 0x7E
+                || b == 0x21 || b == 0x24 || b == 0x26 || b == 0x27 || b == 0x28 || b == 0x29
+                || b == 0x2A || b == 0x2B || b == 0x2C || b == 0x3B || b == 0x3D
+                || b == 0x3A || b == 0x40 || b == 0x2F || b == 0x3F
+        }
+        let hex = Array("0123456789ABCDEF".utf8)
+        let bytes = Array(raw.utf8)
+        var out: [UInt8] = []
+        out.reserveCapacity(bytes.count)
+        var i = 0
+        while i < bytes.count {
+            let b = bytes[i]
+            if b == 0x25, i + 2 < bytes.count, isHex(bytes[i + 1]), isHex(bytes[i + 2]) {
+                out.append(contentsOf: [b, bytes[i + 1], bytes[i + 2]])
+                i += 3
+            } else if isQueryAllowedASCII(b) {
+                out.append(b)
+                i += 1
+            } else {
+                out.append(0x25)
+                out.append(hex[Int(b >> 4)])
+                out.append(hex[Int(b & 0x0F)])
+                i += 1
+            }
+        }
+        return String(decoding: out, as: UTF8.self)
     }
 
     /// curl's escaping: everything but RFC 3986 unreserved characters.

@@ -42,9 +42,7 @@ final class LargeFileSource: @unchecked Sendable {
     private var generation = 0
 
     init(url: URL) throws {
-        let fd = open(url.path, O_RDONLY | O_CLOEXEC)
-        guard fd >= 0 else { throw FileOpenError.couldNotOpenFile }
-        self.fd = fd
+        fd = try FileLoader.openRegularFileDescriptor(at: url)
     }
 
     deinit { close(fd) }

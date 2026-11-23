@@ -18,6 +18,8 @@ final class EditorTextView: NSTextView {
     /// Bracket `paste` and the paste-as variants. Drops insert text without calling these.
     var onPasteBegin: (() -> Void)?
     var onPasteEnd: (() -> Void)?
+    /// Overrides the paste's starting offset when a paste inserts elsewhere than the caret (e.g. whole-line paste).
+    var onPasteOrigin: ((Int) -> Void)?
     /// Asked first by every paste variant. True when it handled the pasteboard itself (file references,
     /// a picture without text), so AppKit does not read it.
     var onPasteboard: ((NSPasteboard) -> Bool)?
@@ -105,6 +107,7 @@ final class EditorTextView: NSTextView {
         let caret = selectedRange().location
         let lineStart = text.lineRange(for: NSRange(location: caret, length: 0)).location
         let string = LineEnding.normalizeToLF(line)
+        onPasteOrigin?(lineStart)
         insertPasted(string, replacing: NSRange(location: lineStart, length: 0))
         setSelectedRange(NSRange(location: caret + (string as NSString).length, length: 0))
         return true
@@ -394,12 +397,22 @@ final class EditorTextView: NSTextView {
         guard !change.edits.isEmpty else { return }
         breakUndoCoalescing()
         undoManager?.beginUndoGrouping()
+        textStorage?.beginEditing()
+        var appliedAny = false
         for edit in change.edits.reversed() where shouldChangeText(in: edit.range, replacementString: edit.string) {
             replaceCharacters(in: edit.range, with: edit.string)
-            didChangeText()
+            appliedAny = true
         }
+        textStorage?.endEditing()
+        if appliedAny { didChangeText() }
         undoManager?.endUndoGrouping()
-        setSelectedRange(change.selection)
+        if let length = editedText?.length {
+            let loc = min(max(0, change.selection.location), length)
+            let len = min(max(0, change.selection.length), length - loc)
+            setSelectedRange(NSRange(location: loc, length: len))
+        } else {
+            setSelectedRange(change.selection)
+        }
     }
 
     /// Escape dismisses a visible ghost before the delegate's Escape (the cards over the editor) sees it.
@@ -637,6 +650,11 @@ final class EditorTextView: NSTextView {
 
     private func dismissInlineHint() {
         guard inlineHintVisible, let text = editedText, let anchor = inlineAnchor else { return }
+        guard anchor.lineStart >= 0, anchor.contentEnd >= anchor.lineStart, anchor.contentEnd <= text.length else {
+            inlineProposal = nil
+            hideInlineHint()
+            return
+        }
         let content = text.substring(with: NSRange(location: anchor.lineStart, length: anchor.contentEnd - anchor.lineStart))
         inlineDismissal = InlineDismissal(start: anchor.lineStart,
                                           length: anchor.contentEnd - anchor.lineStart,

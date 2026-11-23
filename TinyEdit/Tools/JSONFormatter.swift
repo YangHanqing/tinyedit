@@ -17,8 +17,8 @@ enum JSONFormatter {
 
     struct ParseError: Error { var offset: Int }
 
-    static func format(text: String, selection: NSRange?) -> JSONFormatResult {
-        run(text: text, selection: selection, pretty: true)
+    static func format(text: String, selection: NSRange?, maximumOutputBytes: Int? = nil) -> JSONFormatResult {
+        run(text: text, selection: selection, pretty: true, maximumOutputBytes: maximumOutputBytes)
     }
 
     static func minify(text: String, selection: NSRange?) -> JSONFormatResult {
@@ -27,7 +27,8 @@ enum JSONFormatter {
 
     // MARK: Driver
 
-    private static func run(text: String, selection: NSRange?, pretty: Bool) -> JSONFormatResult {
+    private static func run(text: String, selection: NSRange?, pretty: Bool,
+                            maximumOutputBytes: Int? = nil) -> JSONFormatResult {
         let units = Array(text.utf16)
         var lo = 0, hi = units.count
         let wholeDocument = selection == nil || selection!.length == 0
@@ -53,10 +54,18 @@ enum JSONFormatter {
             return .invalid(line: nil, column: nil)
         }
 
-        var out = pretty ? printPretty(node, level: 0) : printMinified(node)
+        let finalNewline = wholeDocument && pretty && units.last == 0x0A
+        var out: String
+        if pretty {
+            guard let formatted = printPretty(node, maximumBytes: maximumOutputBytes.map { $0 - (finalNewline ? 1 : 0) })
+            else { return .unchanged }
+            out = formatted
+        } else {
+            out = printMinified(node)
+        }
         let range: NSRange
         if wholeDocument {
-            if pretty, units.last == 0x0A { out += "\n" }
+            if finalNewline { out += "\n" }
             range = NSRange(location: 0, length: units.count)
         } else {
             range = NSRange(location: lo, length: hi - lo)
@@ -86,20 +95,42 @@ enum JSONFormatter {
 
     // MARK: Printing
 
-    private static func printPretty(_ n: Node, level: Int) -> String {
-        switch n {
-        case .scalar(let s): return s
-        case .array(let items):
-            if items.isEmpty { return "[]" }
-            let pad = String(repeating: "  ", count: level + 1)
-            let body = items.map { pad + printPretty($0, level: level + 1) }.joined(separator: ",\n")
-            return "[\n\(body)\n\(String(repeating: "  ", count: level))]"
-        case .object(let pairs):
-            if pairs.isEmpty { return "{}" }
-            let pad = String(repeating: "  ", count: level + 1)
-            let body = pairs.map { "\(pad)\($0.key): \(printPretty($0.value, level: level + 1))" }.joined(separator: ",\n")
-            return "{\n\(body)\n\(String(repeating: "  ", count: level))}"
+    private static func printPretty(_ node: Node, maximumBytes: Int?) -> String? {
+        var output = ""
+        var remaining = maximumBytes
+        func append(_ text: String) -> Bool {
+            if let budget = remaining {
+                let bytes = text.utf8.count
+                guard bytes <= budget else { return false }
+                remaining = budget - bytes
+            }
+            output += text
+            return true
         }
+        func write(_ node: Node, indent: String) -> Bool {
+            switch node {
+            case .scalar(let text):
+                return append(text)
+            case .array(let items):
+                if items.isEmpty { return append("[]") }
+                guard append("[") else { return false }
+                let child = indent + "  "
+                for (index, item) in items.enumerated() {
+                    guard append(index == 0 ? "\n" : ",\n"), append(child), write(item, indent: child) else { return false }
+                }
+                return append("\n") && append(indent) && append("]")
+            case .object(let pairs):
+                if pairs.isEmpty { return append("{}") }
+                guard append("{") else { return false }
+                let child = indent + "  "
+                for (index, pair) in pairs.enumerated() {
+                    guard append(index == 0 ? "\n" : ",\n"), append(child), append(pair.key),
+                          append(": "), write(pair.value, indent: child) else { return false }
+                }
+                return append("\n") && append(indent) && append("}")
+            }
+        }
+        return write(node, indent: "") ? output : nil
     }
 
     private static func printMinified(_ n: Node) -> String {

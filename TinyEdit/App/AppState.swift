@@ -99,11 +99,14 @@ final class AppState {
     @ObservationIgnored let recoveryActor: RecoveryActor
     @ObservationIgnored var highlight: HighlightController!
     @ObservationIgnored var findMatches: FindMatchController!
+    @ObservationIgnored var findStepTask: Task<Void, Never>?
     /// Where typing in the find field searches from: the selection when find opened, then each match moved to.
     @ObservationIgnored var findAnchor = 0
     @ObservationIgnored var fileURLs: [UUID: URL] = [:]
     @ObservationIgnored var monitors: [UUID: ExternalFileMonitor] = [:]
     @ObservationIgnored var savingIDs: Set<UUID> = []
+    @ObservationIgnored var saveQueues: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored var recoveryEpochs: [UUID: UInt64] = [:]
     @ObservationIgnored var pendingURLs: [URL] = []
     /// `tinyedit` request files (piped text, a line to go to) that arrived before the launch gate opened.
     @ObservationIgnored var pendingRequestURLs: [URL] = []
@@ -180,6 +183,11 @@ final class AppState {
         }
         highlight.onRegionRepainted = { [weak self] store, region in self?.findMatches.restore(in: region, store: store) }
         host.onSelectionChange = { [weak self] store in self?.selectionChanged(store) }
+        host.onStoreActivated = { [weak self] store in
+            guard let self, let b = self.session.buffers[store.id], self.session.selectedBufferID == store.id else { return }
+            self.highlight.schedule(store: store, language: b.language, delay: .zero)
+            self.refreshFindMatches(delay: .zero)
+        }
         host.onFileDrop = { [weak self] urls, location in self?.dropFiles(urls, at: location) }
         host.onScroll = { [weak self] in self?.viewportChanged() }
         host.onEscape = { [weak self] in
@@ -193,6 +201,9 @@ final class AppState {
         host.textView.onJSONMarkClick = { [weak self] in self?.activateJSONMark(at: $0) }
         host.textView.onPasteBegin = { [weak self] in self?.beginPasteRecognition() }
         host.textView.onPasteEnd = { [weak self] in self?.endPasteRecognition() }
+        host.textView.onPasteOrigin = { [weak self] origin in
+            self?.selectionBeforePaste = NSRange(location: origin, length: 0)
+        }
         host.textView.onPasteboard = { [weak self] in self?.handlePasteboard($0) ?? false }
         host.textView.canPasteboard = { [weak self] in
             guard let self, self.activeStore != nil else { return false }
@@ -258,6 +269,7 @@ final class AppState {
     func makeStore(for buffer: EditorBuffer, text: String) -> BufferTextStore {
         let store = BufferTextStore(id: buffer.id, text: text, settings: settings)
         store.onCharactersEdited = { [weak self] s in self?.characterEdited(s) }
+        store.onEditRange = { [weak self] s, range, delta in self?.findMatches.noteEdit(in: s, editedRange: range, delta: delta) }
         store.onLineIndexUpdated = { [weak self, weak store] in
             self?.host.refreshRuler()
             if let store { self?.refreshStatus(for: store) }   // the indent guess may have changed
@@ -292,6 +304,7 @@ final class AppState {
         session.tabOrder.append(buffer.id)
         host.captureViewState()
         session.selectedBufferID = buffer.id
+        activeBufferChanged()
         flushImmediately()
         return true
     }
@@ -348,6 +361,8 @@ final class AppState {
 
     /// Called whenever the visible buffer changes (tab switch, close, restore).
     func activeBufferChanged() {
+        findStepTask?.cancel()
+        findStepTask = nil
         previewBlocks = []
         previewReader.beginDocument(identity: session.selectedBufferID)
         applyPreviewConcealment()
@@ -440,6 +455,13 @@ final class AppState {
                                     lastSavedContentHash: b.lastSavedContentHash)
     }
 
+    /// True when closing this tab could lose the user's text: either unsaved edits or a missing backing file
+    /// whose buffer is the last surviving copy.
+    func needsCloseConfirmation(_ id: UUID) -> Bool {
+        if isDirtyNow(id) { return true }
+        return session.buffers[id]?.conflict == .missing
+    }
+
     // MARK: Status
 
     private func selectionChanged(_ store: BufferTextStore) {
@@ -528,7 +550,8 @@ final class AppState {
 
     private func viewportChanged() {
         // Windowed highlighting for 2-5 MB files refreshes on scroll.
-        guard let b = selectedBuffer, let store = stores[b.id], store.length > HighlightPolicy.fullLimit / 2 else { return }
+        guard let b = selectedBuffer, b.language != .plain, let store = stores[b.id],
+              highlight.isWindowed(store) else { return }
         highlight.schedule(store: store, language: b.language)
     }
 

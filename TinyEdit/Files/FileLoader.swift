@@ -1,4 +1,6 @@
 import Foundation
+import CryptoKit
+import Darwin
 
 struct LoadedFile: Sendable {
     var logicalLF: String
@@ -29,31 +31,104 @@ enum FileLoader {
         case force(TextEncoding)
     }
 
-    /// Blocking: call off the main thread.
-    static func load(from url: URL, decoding: Decoding = .detect) throws -> LoadedFile {
-        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-        let size = (attrs?[.size] as? NSNumber)?.intValue ?? 0
-        if size > maxOpenBytes { throw FileOpenError.fileTooLarge(bytes: size) }
+    /// Follows symlinks via `stat`. Nil when missing or not a regular file (e.g. directory, FIFO, device).
+    static func regularFileStats(at url: URL) -> (size: Int, modificationDate: Date?, permissions: Int)? {
+        var st = stat()
+        guard stat(url.path, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else { return nil }
+        let mod = Date(timeIntervalSince1970: TimeInterval(st.st_mtimespec.tv_sec) + TimeInterval(st.st_mtimespec.tv_nsec) / 1_000_000_000)
+        return (Int(st.st_size), mod, Int(st.st_mode & 0o7777))
+    }
 
-        var data: Data?
+    /// Resolved regular-file byte size, or nil when missing/non-regular.
+    static func regularFileSize(at url: URL) -> Int? { regularFileStats(at: url)?.size }
+
+    /// Validates the opened descriptor. Nonblocking open prevents a path swap to a FIFO from hanging the reader.
+    static func openRegularFileDescriptor(at url: URL) throws -> Int32 {
+        let fd = open(url.path, O_RDONLY | O_CLOEXEC | O_NONBLOCK)
+        guard fd >= 0 else { throw FileOpenError.couldNotOpenFile }
+        var st = stat()
+        guard fstat(fd, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else {
+            close(fd)
+            throw FileOpenError.couldNotOpenFile
+        }
+        return fd
+    }
+
+    static func regularFileHandle(at url: URL) throws -> FileHandle {
+        FileHandle(fileDescriptor: try openRegularFileDescriptor(at: url), closeOnDealloc: true)
+    }
+
+    /// Streaming SHA-256 of raw disk bytes up to `maxOpenBytes`, without decoding or holding the file in RAM.
+    static func rawHash(of url: URL) throws -> String {
+        guard let stats = regularFileStats(at: url) else { throw FileOpenError.couldNotOpenFile }
+        if stats.size > maxOpenBytes { throw FileOpenError.fileTooLarge(bytes: stats.size) }
+
+        var hash: String?
+        var failure: Error?
         var coordError: NSError?
         NSFileCoordinator(filePresenter: nil).coordinate(readingItemAt: url, options: [], error: &coordError) { u in
-            data = try? Data(contentsOf: u)
+            guard let uStats = regularFileStats(at: u) else { failure = FileOpenError.couldNotOpenFile; return }
+            if uStats.size > maxOpenBytes { failure = FileOpenError.fileTooLarge(bytes: uStats.size); return }
+            guard let handle = try? regularFileHandle(at: u) else { failure = FileOpenError.couldNotOpenFile; return }
+            defer { try? handle.close() }
+            var hasher = SHA256()
+            var total = 0
+            while true {
+                let chunk: Data?
+                do { chunk = try handle.read(upToCount: 256 * 1024) } catch { failure = FileOpenError.couldNotOpenFile; return }
+                guard let chunk, !chunk.isEmpty else { break }
+                total += chunk.count
+                if total > maxOpenBytes { failure = FileOpenError.fileTooLarge(bytes: total); return }
+                hasher.update(data: chunk)
+            }
+            hash = hasher.finalize().map { String(format: "%02x", $0) }.joined()
         }
+        if let failure { throw failure }
+        guard let hash, coordError == nil else { throw FileOpenError.couldNotOpenFile }
+        return hash
+    }
+
+    /// Blocking: call off the main thread.
+    static func load(from url: URL, decoding: Decoding = .detect) throws -> LoadedFile {
+        guard let stats = regularFileStats(at: url) else { throw FileOpenError.couldNotOpenFile }
+        if stats.size > maxOpenBytes { throw FileOpenError.fileTooLarge(bytes: stats.size) }
+
+        var data: Data?
+        var failure: Error?
+        var coordError: NSError?
+        NSFileCoordinator(filePresenter: nil).coordinate(readingItemAt: url, options: [], error: &coordError) { u in
+            guard let uStats = regularFileStats(at: u) else { failure = FileOpenError.couldNotOpenFile; return }
+            if uStats.size > maxOpenBytes { failure = FileOpenError.fileTooLarge(bytes: uStats.size); return }
+            guard let handle = try? regularFileHandle(at: u) else { failure = FileOpenError.couldNotOpenFile; return }
+            defer { try? handle.close() }
+            var buffer = Data()
+            buffer.reserveCapacity(min(uStats.size, maxOpenBytes))
+            while buffer.count <= maxOpenBytes {
+                let remaining = maxOpenBytes + 1 - buffer.count
+                let chunk: Data?
+                do { chunk = try handle.read(upToCount: min(remaining, 1_048_576)) } catch { failure = FileOpenError.couldNotOpenFile; return }
+                guard let chunk, !chunk.isEmpty else { break }
+                buffer.append(chunk)
+            }
+            if buffer.count > maxOpenBytes { failure = FileOpenError.fileTooLarge(bytes: buffer.count); return }
+            data = buffer
+        }
+        if let failure { throw failure }
         guard let data, coordError == nil else { throw FileOpenError.couldNotOpenFile }
-        if data.count > maxOpenBytes { throw FileOpenError.fileTooLarge(bytes: data.count) }
+        let finalStats = regularFileStats(at: url) ?? stats
         return try make(from: data, decoding: decoding,
-                        modificationDate: attrs?[.modificationDate] as? Date,
-                        permissions: (attrs?[.posixPermissions] as? NSNumber)?.intValue)
+                        modificationDate: finalStats.modificationDate,
+                        permissions: finalStats.permissions)
     }
 
     /// The first `maxBytes` of a file too large to open, cut after its last whole line (or, for one long
     /// line, before an unfinished UTF-8 sequence), decoded as `load` would. Blocking: call off the main thread.
     static func loadHead(of url: URL, maxBytes: Int) throws -> LoadedFile {
+        guard regularFileStats(at: url) != nil else { throw FileOpenError.couldNotOpenFile }
         var data: Data?
         var coordError: NSError?
         NSFileCoordinator(filePresenter: nil).coordinate(readingItemAt: url, options: [], error: &coordError) { u in
-            guard let handle = try? FileHandle(forReadingFrom: u) else { return }
+            guard let handle = try? regularFileHandle(at: u) else { return }
             defer { try? handle.close() }
             data = try? handle.read(upToCount: maxBytes)
         }

@@ -34,7 +34,8 @@ final class CommandLineToolTests: XCTestCase {
         XCTAssertTrue(CommandLineTool.isRequest(URL(fileURLWithPath: "/a/b.tinyedit-stdin")))
         XCTAssertFalse(CommandLineTool.isRequest(URL(fileURLWithPath: "/a/b.txt")))
         XCTAssertFalse(CommandLineTool.isSpooled(URL(fileURLWithPath: "/a/b.tinyedit-stdin")))
-        XCTAssertTrue(CommandLineTool.isSpooled(URL(fileURLWithPath: "/t/TinyEdit-cli/b.tinyedit-goto")))
+        XCTAssertFalse(CommandLineTool.isSpooled(URL(fileURLWithPath: "/Users/alice/TinyEdit-cli/b.tinyedit-goto")))
+        XCTAssertTrue(CommandLineTool.isSpooled(spool.appendingPathComponent("b.tinyedit-goto")))
     }
 
     func testScriptIsInTheAppBundle() throws {

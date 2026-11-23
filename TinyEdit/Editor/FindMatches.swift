@@ -13,10 +13,41 @@ final class FindMatchController {
     private weak var paintedStore: BufferTextStore?
     /// The generation `matches` were found for: their offsets hold only while it is current.
     private var paintedGeneration: UInt64?
+    /// Exact ranges currently painted with `.backgroundColor` on `paintedStore`, adjusted across edits so
+    /// clearing them never has to walk every syntax-highlighted run in `documentRange`.
+    private var paintedRanges: [NSRange] = []
     /// Called with (count, 1-based current, capped) after each search and selection move; nil count means no search.
     var onCountsChanged: ((Int?, Int?, Bool) -> Void)?
 
     init(host: EditorTextHost) { self.host = host }
+
+    /// Shifts `paintedRanges` when `store` is edited so clearing them later still hits only those ranges.
+    func noteEdit(in store: BufferTextStore, editedRange: NSRange, delta: Int) {
+        guard paintedStore === store, !paintedRanges.isEmpty else { return }
+        let oldEnd = editedRange.location + max(0, editedRange.length - delta)
+        let length = store.length
+        var adjusted: [NSRange] = []
+        adjusted.reserveCapacity(paintedRanges.count)
+        for r in paintedRanges {
+            let rEnd = NSMaxRange(r)
+            if rEnd <= editedRange.location {
+                if r.location < length {
+                    adjusted.append(NSRange(location: r.location, length: min(r.length, length - r.location)))
+                }
+            } else if r.location >= oldEnd {
+                let loc = max(0, r.location + delta)
+                if loc < length {
+                    adjusted.append(NSRange(location: loc, length: min(r.length, length - loc)))
+                }
+            } else {
+                // Overlapped the edited region: expand to cover the surviving span.
+                let start = min(r.location, editedRange.location)
+                let end = min(length, max(NSMaxRange(editedRange), max(0, rEnd + delta)))
+                if end > start { adjusted.append(NSRange(location: start, length: end - start)) }
+            }
+        }
+        paintedRanges = adjusted
+    }
 
     /// Searches `store` off the main thread after `delay`. With `selectFrom`, the first match at or after
     /// that offset is selected and scrolled to (typing in the find field).
@@ -33,9 +64,11 @@ final class FindMatchController {
             guard !Task.isCancelled else { return }
             let generation = store.generation
             let text = store.logicalString()
-            let (ranges, capped) = await Task.detached(priority: .userInitiated) {
-                FindMatches.ranges(of: query, in: text as NSString, caseSensitive: caseSensitive, regex: regex)
-            }.value
+            let work = Task.detached(priority: .userInitiated) {
+                FindMatches.ranges(of: query, in: text as NSString, caseSensitive: caseSensitive, regex: regex,
+                                   isCancelled: { Task.isCancelled })
+            }
+            let (ranges, capped) = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
             guard let self, !Task.isCancelled, store.generation == generation,
                   let host = self.host, host.activeStore === store else { return }
             self.matches = ranges
@@ -90,23 +123,47 @@ final class FindMatchController {
         matches = []
         current = nil
         capped = false
-        guard let host, let store = paintedStore else { return }
+        guard let host, let store = paintedStore else { paintedRanges = []; return }
         paintedStore = nil
         if host.activeStore === store {
-            host.layoutManager.removeRenderingAttribute(.backgroundColor, for: store.contentStorage.documentRange)
+            clearPainted(in: store, host: host)
             host.redrawVisibleText()
+        } else {
+            paintedRanges = []
         }
     }
 
-    private func paint(store: BufferTextStore, host: EditorTextHost) {
+    private func clearPainted(in store: BufferTextStore, host: EditorTextHost) {
+        guard !paintedRanges.isEmpty else { return }
         let lm = host.layoutManager
         let cs = store.contentStorage
-        lm.removeRenderingAttribute(.backgroundColor, for: cs.documentRange)
         let length = store.length
+        for r in paintedRanges {
+            let loc = min(r.location, length)
+            let len = min(r.length, length - loc)
+            guard len > 0, let tr = cs.textRange(for: NSRange(location: loc, length: len)) else { continue }
+            lm.removeRenderingAttribute(.backgroundColor, for: tr)
+        }
+        paintedRanges = []
+    }
+
+    private func paint(store: BufferTextStore, host: EditorTextHost) {
+        if paintedStore === store {
+            clearPainted(in: store, host: host)
+        } else {
+            paintedRanges = []
+        }
+        let lm = host.layoutManager
+        let cs = store.contentStorage
+        let length = store.length
+        var painted: [NSRange] = []
+        painted.reserveCapacity(matches.count)
         for (i, r) in matches.enumerated() {
             guard NSMaxRange(r) <= length, let tr = cs.textRange(for: r) else { continue }
             lm.addRenderingAttribute(.backgroundColor, value: i == current ? Theme.findMatchCurrent : Theme.findMatch, for: tr)
+            painted.append(r)
         }
+        paintedRanges = painted
         paintedStore = store
         paintedGeneration = store.generation
         host.redrawVisibleText()

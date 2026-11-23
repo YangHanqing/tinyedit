@@ -60,8 +60,15 @@ extension AppState: LargeFileViewDelegate {
     // MARK: Opening
 
     /// Opens `url` (its scope already started) in a new large-file tab and returns the tab.
-    func openLargeFile(_ url: URL) async throws -> UUID {
+    func openLargeFile(_ url: URL, ownsScope: Bool = false) async throws -> UUID {
         let (source, encoding) = try await LargeFileDocument.openSource(url, encoding: nil)
+        guard !closing, !transferring else { throw FileOpenError.couldNotOpenFile }
+        if let existing = bufferID(for: url) {
+            if ownsScope { access.stop(url) }
+            return existing
+        }
+        if Workspaces.shared.holder(of: url, excluding: self) != nil { throw FileOpenError.couldNotOpenFile }
+        guard hasRoomForTab else { throw FileOpenError.couldNotOpenFile }
         let bookmark = try access.bookmark(for: url)
         var b = EditorBuffer(title: url.lastPathComponent)
         b.fileBookmark = bookmark
@@ -114,17 +121,54 @@ extension AppState: LargeFileViewDelegate {
     }
 
     /// The status bar's Open in Editor, for a file the editor can hold: the tab is replaced in place.
+    /// Loads first so a failure (e.g. NUL bytes or file grew > 64 MB) never destroys the tab or leaves a zero-tab window.
     func openLargeFileInEditor() {
         guard let id = session.selectedBufferID, let doc = largeFiles[id], !doc.hasEdits, doc.pendingEdits == nil,
               doc.fileSize <= FileLoader.maxOpenBytes, let url = fileURLs[id] else { return }
         let order = session.tabOrder
         let next = order.firstIndex(of: id).flatMap { $0 + 1 < order.count ? order[$0 + 1] : nil }
         let started = access.start(url)
-        removeBuffer(id, rememberClosed: false, refill: false)
         Task {
-            await openURLsAsync([url], mode: .editor)
-            if started { access.stop(url) }
-            if let new = bufferID(for: url), let next, session.buffers[next] != nil { moveTab(new, before: next) }
+            let loaded: LoadedFile
+            do {
+                loaded = try await Task.detached(priority: .userInitiated) { try FileLoader.load(from: url) }.value
+            } catch {
+                if started { access.stop(url) }
+                showToast(String(localized: "Could not open file"), error: true)
+                return
+            }
+            guard !closing, !transferring, session.buffers[id] != nil, largeFiles[id] === doc,
+                  !doc.hasEdits, doc.pendingEdits == nil else {
+                if started { access.stop(url) }
+                return
+            }
+            guard let bookmark = try? access.bookmark(for: url) else {
+                if started { access.stop(url) }
+                showToast(String(localized: "Bookmark failed"), error: true)
+                return
+            }
+            removeBuffer(id, rememberClosed: false, refill: false)
+            var b = EditorBuffer(title: url.lastPathComponent)
+            b.fileBookmark = bookmark
+            b.rememberFileURL(url)
+            b.language = EditorLanguage.detect(fileName: url.lastPathComponent, text: String(loaded.logicalLF.prefix(200)))
+            b.encoding = loaded.encoding
+            b.lineEnding = loaded.lineEnding
+            b.lastSavedContentHash = loaded.logicalHash
+            b.diskContentHash = loaded.rawHash
+            b.diskModificationDate = loaded.modificationDate
+            b.diskFileSize = loaded.byteSize
+            makeStore(for: b, text: loaded.logicalLF)
+            session.buffers[b.id] = b
+            if let next, let insertAt = session.tabOrder.firstIndex(of: next) {
+                session.tabOrder.insert(b.id, at: insertAt)
+            } else {
+                session.tabOrder.append(b.id)
+            }
+            session.keepPinnedFirst()
+            registerFile(id: b.id, url: url)
+            selectTab(b.id)
+            flushImmediately()
         }
     }
 
@@ -167,7 +211,7 @@ extension AppState: LargeFileViewDelegate {
         let status = LargeFileStatus(
             bytes: size, lines: p.lines,
             indexed: p.complete || !doc.isOpen ? nil : size > 0 ? min(Double(p.scannedBytes) / Double(size), 1) : 0,
-            opening: !doc.isOpen, encoding: doc.encoding, lineEnding: doc.lineEnding, editedRows: doc.edits.count,
+            opening: doc.isOpening, encoding: doc.encoding, lineEnding: doc.lineEnding, editedRows: doc.edits.count,
             follow: doc.follow, saving: doc.saveProgress, line: line, hasSelection: doc.hasSelection, canEdit: doc.canEdit,
             canOpenInEditor: doc.isOpen && size <= FileLoader.maxOpenBytes && !doc.hasEdits && doc.pendingEdits == nil,
             checkingEdits: doc.pendingEdits != nil && !doc.editsMismatch,
@@ -342,22 +386,24 @@ extension AppState: LargeFileViewDelegate {
         let replacement = LineEnding.normalizeToLF(find.replacement)
         let id = doc.id
         let generation = doc.generation
+        let capturedQuery = doc.query
         Task {
             if let result = await doc.replaceAllEdits(with: replacement) {
-                // Made from the edits (and file) as they were: an edit or reload since then would be overwritten.
-                guard !result.edits.isEmpty, doc.generation == generation, doc.canEdit else { return }
+                // Made from the edits (and file) as they were: an edit, append or reload since then would be overwritten.
+                guard !result.edits.isEmpty, doc.generation == generation, doc.query == capturedQuery, doc.canEdit else { return }
                 if doc.apply(result.edits, actionName: String(localized: "Replace All")) {
                     showToast(String(localized: "Replaced \(result.count)"))
                     return
                 }
             }
-            await replaceAllIntoNewFile(id, replacement: replacement)
+            guard doc.generation == generation, doc.query == capturedQuery, let q = capturedQuery else { return }
+            await replaceAllIntoNewFile(id, query: q, replacement: replacement)
         }
     }
 
     /// More lines match than edits can hold: the replaced file is written out by Save As.
-    private func replaceAllIntoNewFile(_ id: UUID, replacement: String) async {
-        guard let doc = largeFiles[id], let q = doc.query else { return }
+    private func replaceAllIntoNewFile(_ id: UUID, query q: LargeFileQuery, replacement: String) async {
+        guard let doc = largeFiles[id] else { return }
         if q.isRegex {
             return showToast(String(localized: "Too many lines to replace with a regular expression. Up to 10,000 lines can be replaced at once."))
         }
@@ -468,8 +514,17 @@ extension AppState: LargeFileViewDelegate {
                 BannerAction(title: String(localized: "Reload From Disk"), action: .reloadFromDisk), keep,
             ])
         case .missing:
-            return BannerModel(text: String(localized: "File is missing: \(b.displayTitle)."),
-                               actions: [BannerAction(title: String(localized: "Save As…"), action: .saveAs)])
+            var actions: [BannerAction] = []
+            if doc.isOpen && doc.pendingEdits == nil {
+                actions.append(BannerAction(title: String(localized: "Save As…"), action: .saveAs))
+            }
+            if doc.hasEdits || doc.pendingEdits != nil {
+                actions.append(BannerAction(title: String(localized: "Copy Edits"), action: .copyEdits))
+            }
+            if actions.isEmpty {
+                actions.append(BannerAction(title: String(localized: "Save As…"), action: .saveAs))
+            }
+            return BannerModel(text: String(localized: "File is missing: \(b.displayTitle)."), actions: actions)
         }
     }
 
@@ -483,8 +538,8 @@ extension AppState: LargeFileViewDelegate {
             showToast(String(localized: "The file changed where your edits are. Copy Edits, then Reload From Disk."), error: true)
             return .failed
         }
-        if doc.pendingEdits != nil || !doc.isOpen {
-            // A restored tab that was never shown has not started reading its file: start now.
+        if doc.pendingEdits != nil || !doc.isOpen || doc.index == nil || !doc.progress.complete {
+            // A restored or memory-trimmed tab needs its index before saving.
             doc.ensureOpen(fileURLs[id])
             showToast(String(localized: "Available once the whole file has been read."))
             return .failed
@@ -498,7 +553,14 @@ extension AppState: LargeFileViewDelegate {
         if id == session.selectedBufferID { refreshLargeStatus() }
         switch await doc.save(to: url, overwrite: overwrite, presenter: presenter, replacement: replacement) {
         case .success:
-            _ = await doc.reload(url)
+            // If the tab was closed during the asynchronous save, do not reload or reopen its descriptor.
+            guard session.buffers[id] != nil, largeFiles[id] === doc else { return .saved }
+            let reloaded = await doc.reload(url)
+            guard session.buffers[id] != nil, largeFiles[id] === doc else { return .saved }
+            guard reloaded else {
+                showToast(String(localized: "Could not open file"), error: true)
+                return .failed
+            }
             session.buffers[id]?.conflict = .none
             session.buffers[id]?.dirty = false
             session.buffers[id]?.diskFileSize = doc.fileSize
@@ -506,6 +568,10 @@ extension AppState: LargeFileViewDelegate {
             noteRecentDocument(url)
             flushImmediately()
             return .saved
+        case .failure(.notReady):
+            doc.ensureOpen(fileURLs[id])
+            showToast(String(localized: "Available once the whole file has been read."))
+            return .failed
         case .failure(.externalChange):
             // Save As to another file that changed during the write: nothing was written, and this tab's own file
             // did not change.

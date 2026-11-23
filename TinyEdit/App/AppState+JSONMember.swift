@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 
 /// What the status bar's JSON buttons would act on.
 struct JSONCaretInfo: Equatable {
@@ -245,20 +246,32 @@ extension AppState {
         switch source {
         case .inline:
             jsonValueTask = Task { [weak self] in
-                let uri = await Task.detached(priority: .userInitiated) { DataURI.parse(value) }.value
+                let decoded = await Task.detached(priority: .userInitiated) { () -> (Data, CGImage, CGSize, String)? in
+                    guard let uri = DataURI.parse(value),
+                          let (cgImage, pixels) = Self.decodePreviewImage(uri.data) else { return nil }
+                    let file = Self.fileName(name, extension: uri.fileExtension)
+                    return (uri.data, cgImage, pixels, file)
+                }.value
                 guard let self, !Task.isCancelled else { return }
-                guard let uri else { return self.finishImage(id, path: path, .failure(.notImage)) }
-                let file = Self.fileName(name, extension: uri.fileExtension)
-                self.finishImage(id, path: path, .success((uri.data, nil, file)))
+                guard let (data, cgImage, pixels, file) = decoded else {
+                    return self.finishImage(id, path: path, .failure(.notImage))
+                }
+                self.finishImage(id, path: path, .success((data, cgImage, pixels, nil, file)))
             }
         case .remote:
             guard let url = found.insight.link else { return }
             showJSONValueCard(JSONValueCard(bufferID: id, path: path, content: .loadingImage(host: url.host() ?? "")))
             jsonValueTask = Task { [weak self] in
-                let work = Task.detached(priority: .userInitiated) { () -> Result<(Data, String?), ImagePreviewFailure> in
+                let work = Task.detached(priority: .userInitiated) { () -> Result<(Data, CGImage, CGSize, URL?, String), ImagePreviewFailure> in
                     do {
                         let loaded = try await RemoteImageLoader.load(url)
-                        return .success((loaded.data, loaded.mimeType))
+                        guard let (cgImage, pixels) = Self.decodePreviewImage(loaded.data) else {
+                            return .failure(.notImage)
+                        }
+                        let ext = loaded.mimeType.flatMap(DataURI.fileExtension(forMIMEType:)) ?? url.pathExtension
+                        let last = url.deletingPathExtension().lastPathComponent
+                        let file = Self.fileName(last.isEmpty || last == "/" ? name : last, extension: ext.isEmpty ? "png" : ext)
+                        return .success((loaded.data, cgImage, pixels, url, file))
                     } catch let failure as ImagePreviewFailure {
                         return .failure(failure)
                     } catch {
@@ -267,14 +280,28 @@ extension AppState {
                 }
                 let result = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
                 guard let self, !Task.isCancelled else { return }
-                self.finishImage(id, path: path, result.map { data, mime in
-                    let ext = mime.flatMap(DataURI.fileExtension(forMIMEType:)) ?? url.pathExtension
-                    let last = url.deletingPathExtension().lastPathComponent
-                    let file = Self.fileName(last.isEmpty || last == "/" ? name : last, extension: ext.isEmpty ? "png" : ext)
-                    return (data, url, file)
-                })
+                self.finishImage(id, path: path, result)
             }
         }
+    }
+
+    /// Decodes a bounded thumbnail off the main thread while preserving the real pixel dimensions.
+    nonisolated private static func decodePreviewImage(_ data: Data) -> (CGImage, CGSize)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              CGImageSourceGetCount(source) > 0 else { return nil }
+        let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let rawW = (props?[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue ?? 0
+        let rawH = (props?[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue ?? 0
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: 2048,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+            ?? CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let pixels = rawW > 0 && rawH > 0 ? CGSize(width: rawW, height: rawH) : CGSize(width: cg.width, height: cg.height)
+        return (cg, pixels)
     }
 
     /// The editor's Preview icon: puts the caret in the value, so the card stays while it is there, and previews it.
@@ -282,20 +309,14 @@ extension AppState {
         if placeCaret(in: valueRange) { previewJSONImage() }
     }
 
-    private func finishImage(_ id: UUID, path: String, _ result: Result<(Data, URL?, String), ImagePreviewFailure>) {
+    private func finishImage(_ id: UUID, path: String, _ result: Result<(Data, CGImage, CGSize, URL?, String), ImagePreviewFailure>) {
         jsonValueTask = nil
         guard session.selectedBufferID == id, jsonCaret?.path == path else { return }
         let content: JSONValueCard.Content
         switch result {
-        case .success(let (data, link, file)):
-            if let image = NSImage(data: data), image.isValid {
-                let rep = image.representations.first
-                let pixels = rep.map { CGSize(width: $0.pixelsWide, height: $0.pixelsHigh) } ?? .zero
-                let size = pixels.width > 0 && pixels.height > 0 ? pixels : image.size
-                content = .image(PreviewImage(image: image, data: data, pixelSize: size, link: link, suggestedName: file))
-            } else {
-                content = .failed(Self.imageFailureMessage(.notImage))
-            }
+        case .success(let (data, cgImage, pixels, link, file)):
+            let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            content = .image(PreviewImage(image: image, data: data, pixelSize: pixels, link: link, suggestedName: file))
         case .failure(let failure):
             content = .failed(Self.imageFailureMessage(failure))
         }

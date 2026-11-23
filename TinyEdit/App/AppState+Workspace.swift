@@ -151,7 +151,7 @@ extension AppState {
         guard let index = folders.firstIndex(where: { $0.id == id }) else { return }
         let folder = folders.remove(at: index)
         folderMonitors.removeValue(forKey: id)?.unregister()
-        fileTree.removeRoot(folder.path)
+        fileTree.removeRoot(folder.path, keeping: folders.map(\.path))
         access.stop(folder.scopeURL)
         saveWorkspace()
     }
@@ -197,6 +197,10 @@ extension AppState {
               FileManager.default.fileExists(atPath: url.path) else { folderUnavailable(id); return }
         let old = folders[index].path
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
+        // If the folder was previously unavailable, its scope may never have been started.
+        if folders[index].unavailable, access.start(url) {
+            folders[index].scopeURL = url
+        }
         folders[index].url = resolved
         folders[index].unavailable = false
         if let bookmark = try? access.bookmark(for: url) { folders[index].bookmark = bookmark }
@@ -212,6 +216,11 @@ extension AppState {
         guard panel.runModal() == .OK, let url = panel.url,
               let index = folders.firstIndex(where: { $0.id == id }),
               let bookmark = try? access.bookmark(for: url) else { return }
+        let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
+        if folders.contains(where: { $0.id != id && $0.path == resolved.path }) {
+            removeFolder(id)
+            return
+        }
         let old = folders[index]
         access.start(url)
         folders[index].scopeURL = url
@@ -319,6 +328,11 @@ extension AppState {
     /// before returning, so the other window can then let it go. The undo history stays behind.
     func adoptTab(_ transfer: TabTransfer, before target: UUID?, select: Bool) async -> Bool {
         var buffer = transfer.buffer
+        // Finish the prior removal before this tab can appear in any manifest, including a quit flush.
+        await pendingRemovals[buffer.id]?.value
+        let epoch = await recoveryActor.readmit(buffer.id)
+        guard !closing else { return false }
+        recoveryEpochs[buffer.id] = epoch
         if buffer.fileBookmark != nil { attachRestoredFile(&buffer) }
         if buffer.largeFile != nil {
             makeLargeFile(for: buffer, edits: LargeFileEdits.fromSnapshot(transfer.text) ?? LargeFileEdits())
@@ -332,6 +346,7 @@ extension AppState {
                                     scrollFraction: transfer.viewState.scrollFraction)
             store.indentOverride = transfer.indentOverride
         }
+        writtenGeneration[buffer.id] = nil
         // A tab that left this window earlier and comes back keeps its id: it is no longer deleted here.
         session.tombstones.removeAll { $0 == buffer.id }
         session.buffers[buffer.id] = buffer
@@ -343,9 +358,6 @@ extension AppState {
             session.selectedBufferID = buffer.id
             activeBufferChanged()
         }
-        writtenGeneration[buffer.id] = nil
-        await pendingRemovals[buffer.id]?.value   // it left this window earlier: that deletion goes first
-        await recoveryActor.readmit(buffer.id)
         let durable = await performFlush()
         if buffer.dirty { scheduleDirtyCheck(buffer.id) }
         return durable

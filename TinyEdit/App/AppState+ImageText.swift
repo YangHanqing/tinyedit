@@ -126,7 +126,8 @@ extension AppState {
         case .failure(let error):
             session.buffers[id]?.imageText = nil
             guard !(error is CancellationError) else { return }
-            Log.files.error("image text failed: \(String(describing: error), privacy: .public)")
+            let ns = error as NSError
+            Log.files.error("image text failed: \(ns.domain, privacy: .public) \(ns.code)")
             showToast(String(localized: "Could not read the image"), error: true)
         case .success(let text) where text.isEmpty:
             session.buffers[id]?.imageText = nil
