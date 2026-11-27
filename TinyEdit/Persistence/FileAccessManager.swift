@@ -9,9 +9,15 @@ final class FileAccessManager {
     private var startedKeys: [String: [String]] = [:]
 
     func bookmark(for url: URL) throws -> Data {
-        try url.bookmarkData(options: [.withSecurityScope],
-                             includingResourceValuesForKeys: [.pathKey, .isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
-                             relativeTo: nil)
+        let keys: Set<URLResourceKey> = [.pathKey, .isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+        do {
+            return try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: keys,
+                                        relativeTo: nil)
+        } catch {
+            // The sandbox can refuse a read/write bookmark for a file the user can still read.
+            return try url.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+                                        includingResourceValuesForKeys: keys, relativeTo: nil)
+        }
     }
 
     func resolve(_ bookmark: Data) throws -> (url: URL, isStale: Bool) {

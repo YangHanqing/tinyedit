@@ -26,7 +26,7 @@ enum EndToEnd {
     static func prepare() {
         guard let phase else { return }
         let fm = FileManager.default
-        if phase == 3 || phase == 4 || phase == 5 || phase == 7 || phase == 8 || phase == 9 {
+        if [3, 4, 5, 7, 8, 9, 10].contains(phase) {
             try? fm.removeItem(at: base)
             try? fm.createDirectory(at: root, withIntermediateDirectories: true)
         }
@@ -82,6 +82,7 @@ enum EndToEnd {
             case 7: await phaseMarkdownSelection()
             case 8: await phaseMinifiedJSON()
             case 9: await phaseMarkdownReading()
+            case 10, 11: await phaseReadOnlyFiles(restoring: phase == 11)
             case 1: await phase1()
             case 3: await phaseDiff()
             case 4: await phaseLargeSave()
@@ -95,6 +96,40 @@ enum EndToEnd {
             if !ProcessInfo.processInfo.arguments.contains("--preview-manual") {
                 NSApp.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0.1)
             }
+        }
+    }
+
+    /// Pass a readable, non-writable text file to Launch Services in phase 10. Relaunch in phase 11
+    /// with only its name after `--args --e2e 11`, so the session has to use its bookmark.
+    private static func phaseReadOnlyFiles(restoring: Bool) async {
+        let main = Workspaces.shared.main
+        check(await wait { main.launchGateOpen }, "session opened")
+        guard let name = ProcessInfo.processInfo.arguments.last else { return }
+        let tab = { main.fileURLs.first(where: { $0.value.lastPathComponent == name }) }
+        let attached = await wait { tab() != nil }
+        guard attached, let (id, url) = tab() else {
+            return check(false, "read-only file is attached to a tab")
+        }
+        check(!FileManager.default.isWritableFile(atPath: url.path), "file is not writable")
+        guard let disk = try? FileLoader.load(from: url) else {
+            return check(false, "read-only file can still be read from disk")
+        }
+        check(main.stores[id]?.logicalString() == disk.logicalLF, "editor shows the file text")
+        if restoring {
+            main.removeBuffer(id)
+            await main.reopenClosedTabAsync()
+            check(tab().flatMap { main.stores[$0.key] }?.logicalString() == disk.logicalLF,
+                  "closed read-only file reopens from its bookmark")
+        } else {
+            main.removeBuffer(id)
+            await main.openURLsAsync([url], mode: .large)
+            guard let (largeID, _) = tab(), let doc = main.largeFiles[largeID] else {
+                return check(false, "read-only file also opens in the large-file view")
+            }
+            check(await wait { doc.progress.complete }, "read-only large file indexes")
+            main.openLargeFileInEditor()
+            check(await wait { tab().flatMap { main.stores[$0.key] }?.logicalString() == disk.logicalLF },
+                  "read-only large file opens back in the editor")
         }
     }
 
